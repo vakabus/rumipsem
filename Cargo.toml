@@ -1,0 +1,8 @@
+[package]
+name = "mips-emulator"
+version = "0.1.0"
+authors = ["Vasek Sraier <git@vakabus.cz>"]
+
+[dependencies]
+goblin = '*'
+sc = { git = "https://github.com/japaric/syscall.rs" }
