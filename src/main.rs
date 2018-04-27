@@ -1,5 +1,6 @@
 #![feature(box_syntax)]
 
+extern crate libc;
 extern crate goblin;
 
 #[macro_use]
@@ -7,6 +8,7 @@ extern crate sc;
 
 mod memory;
 mod cpu;
+mod syscalls;
 
 use memory::{Memory, Endianness};
 
@@ -20,11 +22,11 @@ use goblin::error;
 
 fn main() {
     let testFile = PathBuf::from("example/a.out");
-    let (mut memory, entry_point) = load_elf_into_mem_and_get_init_pc("crosscompilation/busybox-mips").expect("Failed to process ELF file");
+    let (mut memory, entry_point) = load_elf_into_mem_and_get_init_pc("mips_binaries/busybox-mips").expect("Failed to process ELF file");
 
     //initialize stack
     //let arguments = std::env::args().into_iter().skip(1).collect();
-    let arguments: Vec<String> = vec!["".to_owned()];
+    let arguments: Vec<String> = vec!["yes".to_owned()];
     let environment_vars = std::env::vars().into_iter().collect();
 
     let stack_pointer = 0x7ffffe50;

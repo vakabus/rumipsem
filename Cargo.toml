@@ -6,3 +6,4 @@ authors = ["Vasek Sraier <git@vakabus.cz>"]
 [dependencies]
 goblin = '*'
 sc = { git = "https://github.com/japaric/syscall.rs" }
+libc = '*'

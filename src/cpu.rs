@@ -1,8 +1,9 @@
 use std::io;
 use std::io::Read;
-use memory::Memory;
+use ::memory::Memory;
+use ::syscalls::eval_syscall;
 
-struct RegisterFile {
+pub struct RegisterFile {
     reg: [u32; 31],
     pc: u32,
 }
@@ -38,6 +39,14 @@ impl RegisterFile {
 
     pub fn set_pc(&mut self, value: u32) {
         self.pc = value;
+    }
+
+    fn print_registers(&self) {
+        for i in 0..32 {
+            println!("reg{:02}:  0x{:08x}", i, self.read_register(i));
+        }
+        println!("------");
+        let mut buf = [0; 1];
     }
 }
 
@@ -80,18 +89,8 @@ fn add_to_upper_bits(word: u32, immediate: u16) -> u32 {
 
 fn sign_extend(word: u32, length: u8) -> i32 {
     assert!(length < 32);
-    ((word as i32) << (32-length)) >> (32-length)
+    ((word as i32) << (32 - length)) >> (32 - length)
     //(word | (0xFF_FF_FF_FF ^ (((word & (1 << (length - 1))) << 1) - 1))) as i32
-}
-
-fn instruction_debugger(registers: &RegisterFile) {
-    for i in 0..32 {
-        println!("reg{:02}:  0x{:08x}", i, registers.read_register(i));
-    }
-    println!("------");
-    let mut buf = [0;1];
-    let mut stdin = io::stdin();
-    let _ = stdin.lock().read(&mut buf);
 }
 
 fn eval_instruction(instruction: u32, registers: &mut RegisterFile, memory: &mut Memory) {
@@ -147,9 +146,18 @@ fn eval_instruction(instruction: u32, registers: &mut RegisterFile, memory: &mut
                     let r = registers.read_register(rs) | registers.read_register(rt);
                     registers.write_register(rd, r);
                 }
+                // NOR
                 0b100111 => {
                     print!("NOR");
                     let r = !(registers.read_register(rs) | registers.read_register(rt));
+                    registers.write_register(rd, r);
+                }
+                // SRA
+                0b000011 => {
+                    assert_eq!(rs, 0);
+
+                    print!("SRA");
+                    let r = ((registers.read_register(rt) as i32) >> get_shift(instruction)) as u32;
                     registers.write_register(rd, r);
                 }
                 // AND
@@ -173,18 +181,16 @@ fn eval_instruction(instruction: u32, registers: &mut RegisterFile, memory: &mut
                     let t = registers.read_register(rs);
                     registers.set_pc(t);
                 }
+                // SLTU
+                0b101011 => {
+                    print!("SLTU");
+                    let r = registers.read_register(rs) < registers.read_register(rt);
+                    registers.write_register(rd, r as u32);
+                }
+                // SYSCALL
                 0b001100 => {
-                    print!("SYSCALL");
-
-                    let syscall_number = (0x03FFFFC0u32 & instruction) >> 6;
-                    let arg1 = registers.read_register(4);
-                    let arg2 = registers.read_register(5);
-                    let arg3 = registers.read_register(6);
-                    let arg4 = registers.read_register(7);
-
-                    syscall!(syscall_number, arg1, arg2, arg3, arg4);
-
-                    panic!("Ahhh! Sakra! Syscall!");
+                    print!("SYSCALL ");
+                    eval_syscall(instruction, registers, memory);
                 }
                 _ => {
                     print!(" - ERROR!!!\n");
@@ -204,15 +210,44 @@ fn eval_instruction(instruction: u32, registers: &mut RegisterFile, memory: &mut
             let r = registers.read_register(rs) & (get_offset(instruction) as u32);
             registers.write_register(rt, r);
         }
-        // BAL
+        // ORI
+        0b001101 => {
+            print!("ORI");
+            let r = registers.read_register(rs) | (get_offset(instruction) as u32);
+            registers.write_register(rt, r);
+        }
+        // BAL or BGEZAL
         0b000001 => {
-            print!("BAL");
-            if rt == 0 {
-                panic!("Conditional Branch-and-Link was removed in release 6!");
+            let mut lower = false;
+            let mut equal = false;
+            let mut higher = false;
+            if rt == 0b10001 && rs == 0 {
+                print!("BAL");
+                equal = true;
+            } else if rt == 0b10001 {
+                // if necessary, just remove this panic
+                panic!("BGEZAL was removed in release 6");
+                print!("BGEZAL\n");
+                higher = true;
+                equal = true;
+            } else if rt == 0b00000 {
+                print!("BLTZ");
+                lower = true;
+            } else if rt == 0b000001 {
+                print!("BGEZ");
+                higher = true;
+                equal = true;
+
+            } else {
+                panic!("Unknown weird conditional jump with rt=0b{:05b}", rt);
             }
-            let pc = registers.get_pc();
-            registers.write_register(31, pc);
-            registers.set_pc((pc as i32 + sign_extend((get_offset(instruction) as u32) << 2, 18) - 4) as u32);
+
+            let val = (registers.read_register(rs) as i32);
+            if (lower && val < 0) || (equal && val == 0) || (higher && val > 0) {
+                let pc = registers.get_pc();
+                registers.write_register(31, pc);
+                registers.set_pc((pc as i32 + sign_extend((get_offset(instruction) as u32) << 2, 18) - 4) as u32);
+            }
         }
         // BEQ
         0b000100 => {
@@ -237,6 +272,21 @@ fn eval_instruction(instruction: u32, registers: &mut RegisterFile, memory: &mut
             } else {
                 print!("not taken");
             }
+        }
+        // J
+        0b000010 => {
+            print!("J");
+            let pc = registers.get_pc() - 4;
+            let target = (pc & 0xF0_00_00_00) | ((instruction & 0x03_FF_FF_FF) << 2);
+            registers.set_pc(target);
+        }
+        // JAL
+        0b000011 => {
+            print!("J");
+            let pc = registers.get_pc() - 4;
+            let target = (pc & 0xF0_00_00_00) | ((instruction & 0x03_FF_FF_FF) << 2);
+            registers.write_register(31, pc + 4);
+            registers.set_pc(target);
         }
         // AUI
         0b001111 => {
@@ -274,7 +324,7 @@ fn eval_instruction(instruction: u32, registers: &mut RegisterFile, memory: &mut
         0b101011 => {
             print!("SW");
             let address = add_signed_offset(registers.read_register(rs), get_offset(instruction));
-            print!(" address={:08X}", address);
+            print!(" address=0x{:08x} data=0x{:08x}", address, registers.read_register(rt));
             memory.write_word(address, registers.read_register(rt));
         }
         // SLTIU
@@ -329,12 +379,18 @@ pub fn run_cpu(entry_point: u32, mut memory: Memory, stack_pointer: u32) {
         // execute old
         eval_instruction(instruction_exec, &mut register_file, &mut memory);
 
-        //instruction_debugger(&register_file);
+        // memory.print_allocations();
+        // register_file.print_registers();
+        //let mut stdin = io::stdin();
+        //let _ = stdin.lock().read(&mut buf);
 
         // prepare for next instruction
         instruction_exec = instruction_load;
     }
 }
+
+
+
 
 
 #[test]

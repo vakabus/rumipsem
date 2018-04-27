@@ -2,17 +2,24 @@ use std::env::Vars;
 use std::env::Args;
 
 const PAGE_SIZE: usize = 65536;
+const MEMORY_SIZE: usize = 0xFF_FF_FF_FF + 1;
 
 pub enum Endianness {
     LITTLE_ENDIAN,
     BIG_ENDIAN,
 }
 
-/// 4GB RAM in a two layer tree
+
+/// This simple data structure represents the 4GB RAM of the emulated machine. But we don't want
+/// to hold onto 4GB of real RAM, when we don't actually need it. The trick here is, that when
+/// we create the Vector filled with zeros, Rust runtime will trust the OS to provide zeroed
+/// memory. And because the Linux kernel uses copy-on-write, we can actually allocate all memory
+/// we need and the request will be fullfilled lazily. So the initial allocation does not take
+/// space and time.
 pub struct Memory {
+
     endianness: Endianness,
-    data: Vec<[u8; 65536]>,
-    pages: Box<[u16; 65536]>,
+    data: Vec<u8>,
 }
 
 impl Memory {
@@ -23,28 +30,17 @@ impl Memory {
     pub fn new(endianness: Endianness) -> Memory {
         Memory {
             endianness,
-            pages: box [65535; 65536],
-            data: Vec::new(),
+            data: vec![0; MEMORY_SIZE],
         }
     }
 
-    fn get_page(&mut self, address: u32) -> &mut [u8; PAGE_SIZE] {
-        let index = self.pages[address as usize / PAGE_SIZE] as usize;
-        if index == 65535 && !self.memory_allocated_fully() {
-            self.data.push([0u8; PAGE_SIZE]);
-            self.pages[address as usize / PAGE_SIZE] = self.data.len() as u16 - 1u16;
-            self.data.last_mut().unwrap()
-        } else {
-            &mut self.data[index]
-        }
-    }
 
     pub fn read_byte(&mut self, address: u32) -> u32 {
-        self.get_page(address)[address as usize % PAGE_SIZE] as u32
+        self.data[address as usize] as u32
     }
 
     pub fn write_byte(&mut self, address: u32, value: u32) {
-        self.get_page(address)[address as usize % PAGE_SIZE] = value as u8;
+        self.data[address as usize] = value as u8;
     }
 
     pub fn read_halfword(&mut self, address: u32) -> u32 {
@@ -106,19 +102,8 @@ impl Memory {
     pub fn write_block(&mut self, address: u32, data: &[u8]) {
         if data.len() == 0 { return; }
 
-        {
-            let mut page = self.get_page(address);
-            let data_end = if data.len() >= PAGE_SIZE { PAGE_SIZE - (address as usize % PAGE_SIZE) } else { data.len() };
-            let page_slice_end = if data.len() >= PAGE_SIZE { PAGE_SIZE } else { (address as usize + data.len()) % PAGE_SIZE };
-            let data_slice = &data[..data_end];
-            let page_slice = &mut page[address as usize % PAGE_SIZE..page_slice_end];
-
-            page_slice.copy_from_slice(data_slice);
-        }
-
-        if PAGE_SIZE - (address as usize % PAGE_SIZE) > data.len() { return; }
-        let ndata = &data[PAGE_SIZE - (address as usize % PAGE_SIZE)..data.len()];
-        self.write_block((address + PAGE_SIZE as u32) - (address + PAGE_SIZE as u32) % PAGE_SIZE as u32, ndata)       // should get get optimized as tail-call
+        let data_slice = &mut (self.data.as_mut_slice()[address as usize..(address as usize + data.len())]);
+        data_slice.copy_from_slice(data);
     }
 
     pub fn initialize_stack_at(&mut self, address: u32, environment_variables: Vec<(String, String)>, arguments: Vec<String>) {
@@ -169,6 +154,14 @@ impl Memory {
 
         // empty auxilary vector
         self.write_word(pointer_address, 0);
-        self.write_word(pointer_address+4, 0);
+        self.write_word(pointer_address + 4, 0);
+    }
+
+    pub fn translate_address(&self, address: u32) -> *const u8{
+        self.data[address as usize..].as_ptr()
+    }
+
+    pub fn translate_address_mut(&mut self, address: u32) -> *mut u8{
+        self.data[address as usize..].as_mut_ptr()
     }
 }
