@@ -9,6 +9,7 @@ extern crate sc;
 mod memory;
 mod cpu;
 mod syscalls;
+mod helpers;
 
 use memory::{Memory, Endianness};
 
@@ -26,10 +27,12 @@ fn main() {
 
     //initialize stack
     //let arguments = std::env::args().into_iter().skip(1).collect();
-    let arguments: Vec<String> = vec!["yes".to_owned()];
-    let environment_vars = std::env::vars().into_iter().collect();
+    let arguments: Vec<String> = vec!["./busybox-mips".to_owned()];
+    //let environment_vars = std::env::vars().into_iter().collect();
 
     let stack_pointer = 0x7ffffe50;
+
+    let environment_vars: Vec<(String, String)> = vec![("SSH_CLIENT".to_owned(), "10.11.8.77 59562 22".to_owned()), ("USER".to_owned(), "ROOT".to_owned()), ("SHLVL".to_owned(), "1".to_owned()),("HOME".to_owned(), "/root".to_owned()), ("LOGNAME".to_owned(), "root".to_owned()), ("PATH".to_owned(), "/usr/sbin:/usr/bin:/sbin:/bin".to_owned()), ("SHELL".to_owned(), "/bin/ash".to_owned()), ("PWD".to_owned(), "/root".to_owned()), ("SSH_CONNECTION".to_owned(), "10.11.8.77 59562 10.11.8.65 22".to_owned())];
     memory.initialize_stack_at(stack_pointer, environment_vars, arguments);
 
     println!("Starting CPU loop:");
