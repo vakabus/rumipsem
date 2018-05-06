@@ -187,7 +187,7 @@ impl Memory {
             pointer_address += 8;
         };
 
-        /*write_vector(33, 0x77_FF_F0_00);
+        write_vector(33, 0x77_FF_F0_00);
         write_vector(16, 0);
         write_vector(6, 0x00_00_10_00);
         write_vector(17, 100);
@@ -203,7 +203,7 @@ impl Memory {
         write_vector(14, 0);
         write_vector(23, 0);
         write_vector(25, 0x7F_FF_FF_18);
-        write_vector(31, 0x7F_FF_FF_ED);*/
+        write_vector(31, 0x7F_FF_FF_ED);
         write_vector(0,0);
 
     }

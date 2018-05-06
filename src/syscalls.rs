@@ -330,6 +330,16 @@ macro_rules! translate_syscall_number {
 }
 
 pub fn eval_syscall(inst: u32, registers: &mut RegisterFile, memory: &mut Memory) {
+    macro_rules! itrace {
+        ($fmt:expr, $($arg:tt)*) => (
+            trace!(concat!("0x{:x}:\tsyscall\t", $fmt), registers.get_pc(), $($arg)*);
+        );
+        ($fmt:expr) => (
+            trace!(concat!("0x{:x}:\tsyscall\t", $fmt), registers.get_pc());
+        );
+    }
+
+
     let syscall_number = registers.read_register(2);
     let arg1 = registers.read_register(4);
     let arg2 = registers.read_register(5);
@@ -339,37 +349,42 @@ pub fn eval_syscall(inst: u32, registers: &mut RegisterFile, memory: &mut Memory
     let translated_syscall_number = translate_syscall_number!(syscall_number);
 
     if translated_syscall_number == 0xFF_FF_FF_FF {
-        print!("sysnum={} arg1={} arg2={} arg3={} arg4={}\n", syscall_number, arg1, arg2, arg3, arg4);
-        eprintln!("Unknown syscall.");
+        error!("sysnum={} arg1={} arg2={} arg3={} arg4={}\n", syscall_number, arg1, arg2, arg3, arg4);
+        error!("Unknown syscall.");
         panic!("Unknown SYSCALL");
     } else {
         let result: isize = match translated_syscall_number {
             SET_THREAD_AREA => {
-                print!("SET_THREAD_AREA");
+                itrace!("SET_THREAD_AREA");
                 0
             }
             SET_TID_ADDRESS => {
-                print!("SET_TID_ADDRESS");
+                itrace!("SET_TID_ADDRESS");
                 0
             }
             GETUID => {
-                print!("GETUID");
-                //syscall!(GETUID)
-                0
+                itrace!("GETUID");
+                /*
+                unsafe {
+                    syscall!(GETUID) as isize
+                }
+                */
+                1000
             }
             AMD64_STAT64 => {
                 //FIXME the struct must have fixed endianness
 
-                print!("STAT64");
-                let res: isize = unsafe {
-                    print!(" file={:?} struct_at=0x{:08x}", CString::from_raw(memory.translate_address_mut(arg1) as *mut i8), arg2);
-                    syscall!(STAT, memory.translate_address(arg1), memory.translate_address(arg2)) as isize
+                let (file, res) = unsafe {
+                    (
+                        CString::from_raw(memory.translate_address_mut(arg1) as *mut i8),
+                        syscall!(STAT, memory.translate_address(arg1), memory.translate_address(arg2)) as isize
+                    )
                 };
-                print!(" res={}", res);
+                itrace!("STAT64 file={:?} struct_at=0x{:08x} res={}", file, arg2, res);
                 res
             }
             IOCTL => {
-                print!("IOCTL a0={} a1={} a2=0x{:x}", arg1, arg2, arg3);
+                itrace!("IOCTL a0={} a1={} a2=0x{:x}", arg1, arg2, arg3);
 
                 let res: isize = unsafe {
                     syscall!(IOCTL, arg1, arg2, memory.translate_address(arg3)) as isize
@@ -377,21 +392,21 @@ pub fn eval_syscall(inst: u32, registers: &mut RegisterFile, memory: &mut Memory
                 res
             }
             DUP2 => {
-                print!("DUP2 oldfd={} newfd={}",arg1, arg2);
+                itrace!("DUP2 oldfd={} newfd={}",arg1, arg2);
 
                 unsafe {
                     syscall!(DUP2, arg1, arg2) as isize
                 }
             }
             WRITE => {
-                print!("WRITE");
+                itrace!("WRITE");
 
                 unsafe {
                     syscall!(WRITE, arg1, memory.translate_address(arg2), arg3) as isize
                 }
             }
             EXIT_GROUP => {
-                println!("EXIT_GROUP");
+                itrace!("EXIT_GROUP");
 
                 unsafe {
                     syscall!(EXIT_GROUP, arg1) as isize

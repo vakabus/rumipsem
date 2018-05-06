@@ -32,6 +32,6 @@ pub fn get_register_name(id: u32) -> &'static str {
         29 => "sp",
         30 => "fp",
         31 => "ra",
-        _ => "ERROR"
+        _ => unreachable!(),
     }
 }

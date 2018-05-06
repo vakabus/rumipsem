@@ -7,3 +7,5 @@ authors = ["Vasek Sraier <git@vakabus.cz>"]
 goblin = '*'
 sc = { git = "https://github.com/japaric/syscall.rs" }
 libc = '*'
+log = '*'
+simplelog = '*'

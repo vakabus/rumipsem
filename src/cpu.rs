@@ -7,6 +7,10 @@ use std::fs::File;
 use std::io::BufReader;
 use std::io::BufRead;
 
+pub struct CPUConfig<'a> {
+    pub tracefile: Option<&'a str>,
+}
+
 pub struct RegisterFile {
     reg: [u32; 31],
     pc: u32,
@@ -103,13 +107,23 @@ fn sign_extend(word: u32, length: u8) -> i32 {
 }
 
 fn eval_instruction(instruction: u32, registers: &mut RegisterFile, memory: &mut Memory) {
+
+    macro_rules! itrace {
+        ($fmt:expr, $($arg:tt)*) => (
+            trace!(concat!("0x{:x}:\t", $fmt), registers.get_pc(), $($arg)*);
+        );
+        ($fmt:expr) => (
+            trace!(concat!("0x{:x}:\t", $fmt), registers.get_pc());
+        );
+    }
+
     let opcode = get_opcode(instruction);
     let funct = get_funct(instruction);
     let rs = get_rs(instruction);
     let rt = get_rt(instruction);
     let rd = get_rd(instruction);
 
-    print!("0x{:x}:    ", registers.get_pc());
+    //print!("0x{:x}:    ", registers.get_pc());
 
     match opcode {
         // ALU operation
@@ -118,19 +132,19 @@ fn eval_instruction(instruction: u32, registers: &mut RegisterFile, memory: &mut
             match funct {
                 // SLL
                 0b000000 => {
-                    if instruction == 0 { print!("nop\t"); } else { print!("sll\t"); }
+                    if instruction == 0 { itrace!("nop\t"); } else { itrace!("sll\t"); }
                     let r = registers.read_register(rt) << get_shift(instruction);
                     registers.write_register(rd, r);
                 }
                 // ROTR
                 0b000010 => {
-                    print!("rotr\t");
+                    itrace!("rotr\t");
                     let r = registers.read_register(rt).rotate_right(get_shift(instruction));
                     registers.write_register(rd, r);
                 }
                 // ADD
                 0b100000 => {
-                    print!("add\t");
+                    itrace!("add\t{},{},{}", ::helpers::get_register_name(rd), ::helpers::get_register_name(rs), ::helpers::get_register_name(rt));
                     let (r, overflow) = registers.read_register(rs).overflowing_add(registers.read_register(rt));
                     if overflow {
                         panic!("Overflow occured during addition. Should TRAP. Please FIX");
@@ -139,57 +153,51 @@ fn eval_instruction(instruction: u32, registers: &mut RegisterFile, memory: &mut
                 }
                 // ADDU
                 0b100001 => {
-                    print!("addu\t");
+                    itrace!("addu\t{},{},{}", ::helpers::get_register_name(rd), ::helpers::get_register_name(rs), ::helpers::get_register_name(rt));
                     let (r, _) = registers.read_register(rs).overflowing_add(registers.read_register(rt));
-                    print!("{},{},{}", ::helpers::get_register_name(rd), ::helpers::get_register_name(rs), ::helpers::get_register_name(rt));
                     registers.write_register(rd, r);
                 }
                 // SUBU
                 0b100011 => {
-                    print!("subu\t");
                     let (r, _) = registers.read_register(rs).overflowing_sub(registers.read_register(rt));
-                    print!("{},{},{}", ::helpers::get_register_name(rd), ::helpers::get_register_name(rs), ::helpers::get_register_name(rt));
+                    itrace!("subu\t{},{},{}", ::helpers::get_register_name(rd), ::helpers::get_register_name(rs), ::helpers::get_register_name(rt));
                     registers.write_register(rd, r);
                 }
                 // OR
                 0b100101 => {
-                    print!("or\t");
                     let r = registers.read_register(rs) | registers.read_register(rt);
-                    print!("{},{},{} - res=0x{:08x}", ::helpers::get_register_name(rd), ::helpers::get_register_name(rs), ::helpers::get_register_name(rt), r);
+                    itrace!("or\t{},{},{} - res=0x{:08x}", ::helpers::get_register_name(rd), ::helpers::get_register_name(rs), ::helpers::get_register_name(rt), r);
                     registers.write_register(rd, r);
                 }
                 // NOR
                 0b100111 => {
-                    print!("nor\t");
                     let r = !(registers.read_register(rs) | registers.read_register(rt));
-                    print!("{},{},{}", ::helpers::get_register_name(rd), ::helpers::get_register_name(rs), ::helpers::get_register_name(rt));
+                    itrace!("nor\t{},{},{}", ::helpers::get_register_name(rd), ::helpers::get_register_name(rs), ::helpers::get_register_name(rt));
                     registers.write_register(rd, r);
                 }
                 // SRA
                 0b000011 => {
                     assert_eq!(rs, 0);
 
-                    print!("sra\t");
+                    itrace!("sra\t");
                     let r = ((registers.read_register(rt) as i32) >> get_shift(instruction)) as u32;
                     registers.write_register(rd, r);
                 }
                 // AND
                 0b100100 => {
-                    print!("and\t");
                     let r = registers.read_register(rs) & registers.read_register(rt);
-                    print!("{},{},{}", ::helpers::get_register_name(rd), ::helpers::get_register_name(rs), ::helpers::get_register_name(rt));
+                    itrace!("and\t{},{},{}", ::helpers::get_register_name(rd), ::helpers::get_register_name(rs), ::helpers::get_register_name(rt));
                     registers.write_register(rd, r);
                 }
                 // XOR
                 0b100110 => {
-                    print!("and\t");
                     let r = registers.read_register(rs) ^ registers.read_register(rt);
-                    print!("{},{},{}", ::helpers::get_register_name(rd), ::helpers::get_register_name(rs), ::helpers::get_register_name(rt));
+                    itrace!("xor\t{},{},{}", ::helpers::get_register_name(rd), ::helpers::get_register_name(rs), ::helpers::get_register_name(rt));
                     registers.write_register(rd, r);
                 }
                 //JALR
                 0b001001 => {
-                    print!("jalr\t");
+                    itrace!("jalr\t{},{} - target=0x{:08x}", ::helpers::get_register_name(rd), ::helpers::get_register_name(rs), registers.read_register(rs));
                     let pc = registers.get_pc();
                     registers.write_register(rd, pc + 8);
                     let r = registers.read_register(rs);
@@ -198,52 +206,48 @@ fn eval_instruction(instruction: u32, registers: &mut RegisterFile, memory: &mut
                 }
                 // JR
                 0b001000 => {
-                    print!("jr\t{}", ::helpers::get_register_name(rs));
+                    itrace!("jr\t{}", ::helpers::get_register_name(rs));
                     let t = registers.read_register(rs);
                     registers.jump_to(t);
                 }
                 // SLT
                 0b101010 => {
-                    print!("slt\t");
-                    print!("{},{},{}", ::helpers::get_register_name(rd), ::helpers::get_register_name(rs), ::helpers::get_register_name(rt));
+                    itrace!("slt\t{},{},{}", ::helpers::get_register_name(rd), ::helpers::get_register_name(rs), ::helpers::get_register_name(rt));
                     let r = (registers.read_register(rs) as i32) < (registers.read_register(rt) as i32);
                     registers.write_register(rd, r as u32);
                 }
                 // SLTU
                 0b101011 => {
-                    print!("sltu\t");
+                    itrace!("sltu\t");
                     let r = registers.read_register(rs) < registers.read_register(rt);
                     registers.write_register(rd, r as u32);
                 }
                 // SYSCALL
                 0b001100 => {
-                    print!("syscall\t");
                     eval_syscall(instruction, registers, memory);
                 }
                 _ => {
-                    print!(" - ERROR!!!\n");
+                    error!("Unsupported ALU operation function code 0b{:06b}", funct);
                     panic!("Unsupported ALU operation function code 0b{:06b}", funct)
                 }
             }
         }
         // ADDIU
         0b001001 => {
-            print!("addiu\t");
             let r = add_signed_offset(registers.read_register(rs), get_offset(instruction));
-            print!("{},{},0x{:04x} - res=0x{:x}", ::helpers::get_register_name(rt), ::helpers::get_register_name(rs), get_offset(instruction), r);
+            itrace!("addiu\t{},{},0x{:04x} - res=0x{:x}", ::helpers::get_register_name(rt), ::helpers::get_register_name(rs), get_offset(instruction), r);
             registers.write_register(rt, r);
         }
         // ANDI
         0b001100 => {
-            print!("andi\t{},{},0x{:x}", ::helpers::get_register_name(rt), ::helpers::get_register_name(rs), get_offset(instruction));
+            itrace!("andi\t{},{},0x{:x}", ::helpers::get_register_name(rt), ::helpers::get_register_name(rs), get_offset(instruction));
             let r = registers.read_register(rs) & (get_offset(instruction) as u32);
             registers.write_register(rt, r);
         }
         // ORI
         0b001101 => {
-            print!("ori\t");
+            itrace!("ori\t{},{},0x{:04x}", ::helpers::get_register_name(rt), ::helpers::get_register_name(rs), get_offset(instruction));
             let r = registers.read_register(rs) | (get_offset(instruction) as u32);
-            print!("{},{},0x{:04x}", ::helpers::get_register_name(rt), ::helpers::get_register_name(rs), get_offset(instruction));
             registers.write_register(rt, r);
         }
         // BAL or BGEZAL
@@ -251,20 +255,21 @@ fn eval_instruction(instruction: u32, registers: &mut RegisterFile, memory: &mut
             let mut lower = false;
             let mut equal = false;
             let mut higher = false;
+            let mut inst;
             if rs == 0 && rt == 0b10001 {
-                print!("bal\t");
+                inst = "bal";
                 equal = true;
             } else if rt == 0b10001 {
                 // if necessary, just remove this panic
                 panic!("BGEZAL was removed in release 6");
-                print!("BGEZAL\n");
+                inst = "BGEZAL";
                 higher = true;
                 equal = true;
             } else if rt == 0b00000 {
-                print!("bltz\t");
+                inst = "bltz";
                 lower = true;
             } else if rt == 0b000001 {
-                print!("bgez\t");
+                inst = "bgez";
                 higher = true;
                 equal = true;
             } else {
@@ -272,51 +277,45 @@ fn eval_instruction(instruction: u32, registers: &mut RegisterFile, memory: &mut
             }
 
             let val = (registers.read_register(rs) as i32);
+            let pc = registers.get_pc();
+            let address = (pc as i32 + 4 + sign_extend((get_offset(instruction) as u32) << 2, 18)) as u32;
+            let mut jumped = false;
+
             if (lower && val < 0) || (equal && val == 0) || (higher && val > 0) {
-                print!(" - branch taken");
-                let pc = registers.get_pc();
                 registers.write_register(31, pc + 8);
-                registers.jump_to((pc as i32 + 4 + sign_extend((get_offset(instruction) as u32) << 2, 18)) as u32);
-            } else {
-                print!(" - branch NOT taken");
+                registers.jump_to(address);
+                jumped=true;
             }
+            itrace!("{}\t{},0x{:x} - val=0x{:x} => {}", inst, ::helpers::get_register_name(rs), address, val, jumped);
         }
         // BEQ
         0b000100 => {
-            print!("beq\t");
             let target_offset = sign_extend((get_offset(instruction) as u32) << 2, 18);
             let r = (registers.get_pc() as i32 + 4 + target_offset) as u32;
-            print!("{},{},0x{:x} - ", ::helpers::get_register_name(rs), ::helpers::get_register_name(rt), r);
+            itrace!("beq\t{},{},0x{:x} - jumped={}", ::helpers::get_register_name(rs), ::helpers::get_register_name(rt), r, registers.read_register(rs) == registers.read_register(rt));
             if registers.read_register(rs) == registers.read_register(rt) {
                 registers.jump_to(r);
-                print!("taken")
-            } else {
-                print!("not taken");
             }
         }
         // BNE
         0b000101 => {
-            print!("bne\t");
             let target_offset = sign_extend((get_offset(instruction) as u32) << 2, 18);
             let r = (registers.get_pc() as i32 + 4 + target_offset) as u32;
-            print!("{},{},0x{:x} - ", ::helpers::get_register_name(rs), ::helpers::get_register_name(rt), r);
+            itrace!("bne\t{},{},0x{:x} - jumped={}", ::helpers::get_register_name(rs), ::helpers::get_register_name(rt), r, registers.read_register(rs) != registers.read_register(rt));
             if registers.read_register(rs) != registers.read_register(rt) {
                 registers.jump_to(r);
-                print!("taken")
-            } else {
-                print!("not taken");
             }
         }
         // J
         0b000010 => {
-            print!("j\t");
+            itrace!("j\t");
             let pc = registers.get_pc() + 4;
             let target = (pc & 0xF0_00_00_00) | ((instruction & 0x03_FF_FF_FF) << 2);
             registers.jump_to(target);
         }
         // JAL
         0b000011 => {
-            print!("jal\t");
+            itrace!("jal\t");
             let pc = registers.get_pc();
             let target = (pc & 0xF0_00_00_00) | ((instruction & 0x03_FF_FF_FF) << 2);
             registers.write_register(31, pc + 8);
@@ -324,74 +323,66 @@ fn eval_instruction(instruction: u32, registers: &mut RegisterFile, memory: &mut
         }
         // AUI
         0b001111 => {
-            print!("aui\t");
+            itrace!("aui\t");
             let r = add_to_upper_bits(registers.read_register(rs), get_offset(instruction));
             registers.write_register(rt, r);
         }
         // LB
         0b100000 => {
-            print!("lb\t");
             let addr = add_signed_offset(registers.read_register(rs), get_offset(instruction));
             let r = sign_extend(memory.read_byte(addr), 8);
-            print!("{},0x{:x} - data=0x{:08x}", ::helpers::get_register_name(rt), addr, r);
+            itrace!("lb\t{},0x{:x} - data=0x{:08x}", ::helpers::get_register_name(rt), addr, r);
             registers.write_register(rt, r as u32);
         }
         //LHU
         0b100101 => {
-            print!("lhu\t");
             let r = memory.read_halfword(add_signed_offset(registers.read_register(rs), get_offset(instruction)));
-            print!(" data={:08x}", r);
+            itrace!("lhu\tdata={:08x}", r);
             registers.write_register(rt, r);
         }
         // LBU
         0b100100 => {
-            print!("lbu\t");
+            itrace!("lbu\t");
             let r = memory.read_byte(add_signed_offset(registers.read_register(rs), get_offset(instruction)));
             registers.write_register(rt, r);
         }
         // LW
         0b100011 => {
-            print!("lw\t");
             let addr = add_signed_offset(registers.read_register(rs), get_offset(instruction));
             let r = memory.read_word(addr);
-            print!("{},0x{:x} - data=0x{:08x}", ::helpers::get_register_name(rt), addr, r);
+            itrace!("lw\t{},0x{:x} - data=0x{:08x}", ::helpers::get_register_name(rt), addr, r);
             registers.write_register(rt, r);
         }
         // SB
         0b101000 => {
-            print!("sb\t");
+            itrace!("sb\t");
             memory.write_byte(add_signed_offset(registers.read_register(rs), get_offset(instruction)), registers.read_register(rt));
         }
         // SW
         0b101001 => {
-            print!("sh\t");
             let address = add_signed_offset(registers.read_register(rs), get_offset(instruction));
-            print!("{},0x{:x} - data=0x{:04x}", ::helpers::get_register_name(rt), address, registers.read_register(rt) & 0xFFFF);
+            itrace!("sh\t{},0x{:x} - data=0x{:04x}", ::helpers::get_register_name(rt), address, registers.read_register(rt) & 0xFFFF);
             memory.write_halfword(address, registers.read_register(rt));
         }
         // SW
         0b101011 => {
-            print!("sw\t");
             let address = add_signed_offset(registers.read_register(rs), get_offset(instruction));
-            print!("{},0x{:x} - data=0x{:08x}", ::helpers::get_register_name(rt), address, registers.read_register(rt));
+            itrace!("sw\t{},0x{:x} - data=0x{:08x}", ::helpers::get_register_name(rt), address, registers.read_register(rt));
             memory.write_word(address, registers.read_register(rt));
         }
         // SLTIU
         0b001011 => {
-            print!("sltiu\t{},{},0x{:x}", ::helpers::get_register_name(rt), ::helpers::get_register_name(rs), sign_extend(get_offset(instruction) as u32, 16));
             let a = registers.read_register(rs) < (sign_extend(get_offset(instruction) as u32, 16) as u32);
-            print!(" - {:08x} < {:08x}", registers.read_register(rs), (sign_extend(get_offset(instruction) as u32, 16) as u32));
+            itrace!("sltiu\t{},{},0x{:x} - {:08x} < {:08x} = {}", ::helpers::get_register_name(rt), ::helpers::get_register_name(rs), sign_extend(get_offset(instruction) as u32, 16), registers.read_register(rs), (sign_extend(get_offset(instruction) as u32, 16) as u32), a);
             if a {
                 registers.write_register(rt, 1);
-                print!(" = true (1)");
             } else {
                 registers.write_register(rt, 0);
-                print!(" = false (0)");
             }
         }
         // PCREL
         0b111011 => {
-            print!("PCREL ");
+            itrace!("PCREL ");
             match rt {
                 0b11111 => {
                     print!("ALUIPC");
@@ -403,11 +394,10 @@ fn eval_instruction(instruction: u32, registers: &mut RegisterFile, memory: &mut
         }
         // SPECIAL3
         0b011111 => {
-            print!("SPECIAL3 ");
             match funct {
                 // ALIGN
                 0b100000 => {
-                    print!("ALIGN");
+                    itrace!("align");
                     let shift = get_shift(instruction);
                     assert_eq!(shift & 0xFC, 0b01000);
                     let bp = shift & 0x03;
@@ -415,13 +405,13 @@ fn eval_instruction(instruction: u32, registers: &mut RegisterFile, memory: &mut
                     registers.write_register(rd, r);
                 }
                 0b111011 => {
-                    print!("RDHWR");
+                    itrace!("rdhwr");
                     let sel = get_offset(instruction) & 0x07;
                     match rd {
                         29 => {
                             println!();
-                            print!("\tWARNING - Attempt to read from COPROCESSOR. Unsupported. Faking it.");
-                            registers.write_register(rt, 0x58e950);     // this value was copyied from gdb on real HW
+                            warn!("Attempt to read from COPROCESSOR. Unsupported. Faking it.");
+                            registers.write_register(rt, 0x58e950);     // this value was copied from gdb on real HW
                         }
                         _ => {
                             println!();
@@ -441,11 +431,10 @@ fn eval_instruction(instruction: u32, registers: &mut RegisterFile, memory: &mut
             panic!("Tried to execute instruction with unknown OPCODE - 0b{:06b}", opcode)
         }
     }
-    println!();
     //println!(" instruction=0x{:08x}", instruction);
 }
 
-pub fn run_cpu(entry_point: u32, mut memory: Memory, stack_pointer: u32) {
+pub fn run_cpu(entry_point: u32, mut memory: Memory, stack_pointer: u32, cpu_config: CPUConfig) {
     let mut register_file = RegisterFile::new(stack_pointer);
     let mut program_counter: VecDeque<u32> = VecDeque::with_capacity(3);
     program_counter.push_back(entry_point);
@@ -456,7 +445,7 @@ pub fn run_cpu(entry_point: u32, mut memory: Memory, stack_pointer: u32) {
     let mut nop_count = 0;
     let mut debug_mode = false;
 
-    let mut watchdog_status = WatchdogStatus::new();
+    let mut watchdog_status = WatchdogStatus::new(cpu_config.tracefile);
 
     loop {
         let pc = program_counter.pop_front().unwrap();
@@ -489,26 +478,31 @@ pub fn run_cpu(entry_point: u32, mut memory: Memory, stack_pointer: u32) {
 
 struct WatchdogStatus {
     instruction_number: usize,
-    real_trace: Vec<u32>,
+    real_trace: Option<Vec<u32>>,
     nop_count: usize,
 }
 
 impl WatchdogStatus {
-    fn new() -> WatchdogStatus {
-        let f = File::open("mips_binaries/instruction.trace").unwrap();
-        let file = BufReader::new(&f);
-        let mut real_trace = Vec::new();
-        for (num, line) in file.lines().enumerate() {
-            let line = line.unwrap();
-            let addr: &str = line.split(':').next().unwrap();
-            if addr.len() < 2 {
-                continue;
+    fn new(tracefile: Option<&str>) -> WatchdogStatus {
+        let real_trace = if let Some(tracefile) = tracefile {
+            let f = File::open(tracefile).unwrap();
+            let file = BufReader::new(&f);
+            let mut real_trace = Vec::new();
+            for (num, line) in file.lines().enumerate() {
+                let line = line.unwrap();
+                let addr: &str = line.split(':').next().unwrap();
+                if addr.len() < 2 {
+                    continue;
+                }
+                match u32::from_str_radix(&addr[2..], 16) {
+                    Ok(val) => real_trace.push(val),
+                    Err(_) => {}
+                }
             }
-            match u32::from_str_radix(&addr[2..], 16) {
-                Ok(val) => real_trace.push(val),
-                Err(_) => {}
-            }
-        }
+            Some(real_trace)
+        } else {
+            None
+        };
 
         WatchdogStatus {
             instruction_number: 0,
@@ -536,13 +530,14 @@ fn cpu_watchdogs(status: WatchdogStatus, register_file: &RegisterFile, memory: &
         panic!("Too many NOPs in sequence. Aborting!");
     }
 
-    // trace
-    if register_file.get_pc() == *status.real_trace.get(status.instruction_number).expect("Real trace not long enough.") {
-        status.instruction_number += 1;
-    } else {
-        panic!("Execution diverged from real execution trace - upcoming instruction is at address 0x{:x}, but 0x{:x} was expected. One of the executed instructions must be implemented differently.", register_file.get_pc(), status.real_trace.get(status.instruction_number).unwrap());
+    // trace if enabled
+    if let Some(trace) = &status.real_trace {
+        if register_file.get_pc() == *trace.get(status.instruction_number).expect("Real trace not long enough.") {
+            status.instruction_number += 1;
+        } else {
+            panic!("Execution diverged from real execution trace - upcoming instruction is at address 0x{:x}, but 0x{:x} was expected. One of the executed instructions must be implemented differently.", register_file.get_pc(), trace.get(status.instruction_number).unwrap());
+        }
     }
-
 
     status
 }
