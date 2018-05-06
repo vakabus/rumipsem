@@ -278,7 +278,7 @@ macro_rules! translate_syscall_number {
             4184 => SOCKETPAIR,
             4304 => SPLICE,
             4106 => STAT,
-            //4213 => STAT64,        //FIXME works only on amd64
+            4213 => AMD64_STAT64,        //FIXME works only on amd64
             4099 => STATFS,
             4366 => STATX,
             4115 => SWAPOFF,
@@ -338,42 +338,75 @@ pub fn eval_syscall(inst: u32, registers: &mut RegisterFile, memory: &mut Memory
 
     let translated_syscall_number = translate_syscall_number!(syscall_number);
 
-    if syscall_number == 0xFF_FF_FF_FF {
+    if translated_syscall_number == 0xFF_FF_FF_FF {
         print!("sysnum={} arg1={} arg2={} arg3={} arg4={}\n", syscall_number, arg1, arg2, arg3, arg4);
         eprintln!("Unknown syscall.");
         panic!("Unknown SYSCALL");
     } else {
-        let mut arg4 = arg4;
-        let mut result: u32;
+        let result: isize = match translated_syscall_number {
+            SET_THREAD_AREA => {
+                print!("SET_THREAD_AREA");
+                0
+            }
+            SET_TID_ADDRESS => {
+                print!("SET_TID_ADDRESS");
+                0
+            }
+            GETUID => {
+                print!("GETUID");
+                //syscall!(GETUID)
+                0
+            }
+            AMD64_STAT64 => {
+                //FIXME the struct must have fixed endianness
 
-        unsafe {
-            result = match translated_syscall_number {
-                SET_THREAD_AREA => {
-                    print!("SET_THREAD_AREA");
-                    arg4 = 0;
-                    0
-                }
-                SET_TID_ADDRESS => {
-                    print!("SET_TID_ADDRESS");
-                    0
-                }
-                GETUID => {
-                    print!("GETUID");
-                    syscall!(GETUID)
-                }
-                STAT64 => {
-                    //FIXME the struct must have fixed endianness
-
-                    print!("STAT64");
+                print!("STAT64");
+                let res: isize = unsafe {
                     print!(" file={:?} struct_at=0x{:08x}", CString::from_raw(memory.translate_address_mut(arg1) as *mut i8), arg2);
-                    syscall!(STAT, memory.translate_address(arg1), memory.translate_address(arg2))
-                }
-                0xFF_FF_FF_FF => panic!("Nope, this syscall is not implemented and probably will not be. orign={} n={}", syscall_number, translated_syscall_number),
-                _ => panic!("Should never happen!"),
-            } as u32;
-        }
+                    syscall!(STAT, memory.translate_address(arg1), memory.translate_address(arg2)) as isize
+                };
+                print!(" res={}", res);
+                res
+            }
+            IOCTL => {
+                print!("IOCTL a0={} a1={} a2=0x{:x}", arg1, arg2, arg3);
 
-        registers.write_register(2, result);
-        registers.write_register(7, arg4);
+                let res: isize = unsafe {
+                    syscall!(IOCTL, arg1, arg2, memory.translate_address(arg3)) as isize
+                };
+                res
+            }
+            DUP2 => {
+                print!("DUP2 oldfd={} newfd={}",arg1, arg2);
+
+                unsafe {
+                    syscall!(DUP2, arg1, arg2) as isize
+                }
+            }
+            WRITE => {
+                print!("WRITE");
+
+                unsafe {
+                    syscall!(WRITE, arg1, memory.translate_address(arg2), arg3) as isize
+                }
+            }
+            EXIT_GROUP => {
+                println!("EXIT_GROUP");
+
+                unsafe {
+                    syscall!(EXIT_GROUP, arg1) as isize
+                }
+            }
+            _ => panic!("Syscall translated, but unknown. OrigNum={} TrNum={}", syscall_number, translated_syscall_number),
+        };
+
+        // this depends on architecture ABI - this is x86_64
+        if result < 0 {
+            registers.write_register(7, 1); // report error
+            registers.write_register(2, (-result) as u32);
+        } else {
+            registers.write_register(2, result as u32);
+            registers.write_register(7, 0);
+        }
     }
 }

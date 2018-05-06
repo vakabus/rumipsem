@@ -12,7 +12,6 @@ mod syscalls;
 mod helpers;
 
 use memory::{Memory, Endianness};
-
 use std::{env,
           path::PathBuf,
           fs::File,
@@ -20,19 +19,27 @@ use std::{env,
 };
 use goblin::error;
 
-
 fn main() {
-    let testFile = PathBuf::from("example/a.out");
-    let (mut memory, entry_point) = load_elf_into_mem_and_get_init_pc("mips_binaries/busybox-mips").expect("Failed to process ELF file");
+    run_coredump("mips_binaries/coredump", 0x4001b0 ,0x7ffffe50);
+}
+
+fn run_coredump(path: &str, entry_point: u32, stack_pointer: u32) {
+    /// With coredumps, all we need is to load the correct sections into memory. That should be all.
+
+    let (mut memory, _) = load_elf_into_mem_and_get_init_pc(path).expect("Failed to process ELF file");
+    println!("Starting CPU loop:");
+    cpu::run_cpu(entry_point, memory, stack_pointer);
+}
+
+fn run_binary(path: &str) {
+    let (mut memory, entry_point) = load_elf_into_mem_and_get_init_pc(path).expect("Failed to process ELF file");
 
     //initialize stack
     //let arguments = std::env::args().into_iter().skip(1).collect();
-    let arguments: Vec<String> = vec!["./busybox-mips".to_owned()];
+    let arguments: Vec<String> = vec![format!("./{}", path).to_owned()];
     //let environment_vars = std::env::vars().into_iter().collect();
-
     let stack_pointer = 0x7ffffe50;
-
-    let environment_vars: Vec<(String, String)> = vec![("SSH_CLIENT".to_owned(), "10.11.8.77 59562 22".to_owned()), ("USER".to_owned(), "ROOT".to_owned()), ("SHLVL".to_owned(), "1".to_owned()),("HOME".to_owned(), "/root".to_owned()), ("LOGNAME".to_owned(), "root".to_owned()), ("PATH".to_owned(), "/usr/sbin:/usr/bin:/sbin:/bin".to_owned()), ("SHELL".to_owned(), "/bin/ash".to_owned()), ("PWD".to_owned(), "/root".to_owned()), ("SSH_CONNECTION".to_owned(), "10.11.8.77 59562 10.11.8.65 22".to_owned())];
+    let environment_vars: Vec<(String, String)> = vec![("SSH_CLIENT".to_owned(), "10.11.8.77 59562 22".to_owned()), ("USER".to_owned(), "ROOT".to_owned()), ("SHLVL".to_owned(), "1".to_owned()), ("HOME".to_owned(), "/root".to_owned()), ("LOGNAME".to_owned(), "root".to_owned()), ("PATH".to_owned(), "/usr/sbin:/usr/bin:/sbin:/bin".to_owned()), ("SHELL".to_owned(), "/bin/ash".to_owned()), ("PWD".to_owned(), "/root".to_owned()), ("SSH_CONNECTION".to_owned(), "10.11.8.77 59562 10.11.8.65 22".to_owned())];
     memory.initialize_stack_at(stack_pointer, environment_vars, arguments);
 
     println!("Starting CPU loop:");
