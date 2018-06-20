@@ -5,7 +5,12 @@ authors = ["Vasek Sraier <git@vakabus.cz>"]
 
 [dependencies]
 goblin = '*'
-sc = { git = "https://github.com/japaric/syscall.rs" }
+#sc = { git = "https://github.com/japaric/syscall.rs" }
 libc = '*'
 log = '*'
-simplelog = '*'
+#simplelog = '*'
+simple_logger = '*'
+serde = '*'
+serde_json = '*'
+serde_derive = '*'
+flate2 = '*'

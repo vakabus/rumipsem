@@ -1,12 +1,8 @@
-use std::env::Vars;
-use std::env::Args;
-
-const PAGE_SIZE: usize = 65536;
 const MEMORY_SIZE: usize = 0xFF_FF_FF_FF + 1;
 
 pub enum Endianness {
-    LITTLE_ENDIAN,
-    BIG_ENDIAN,
+    LittleEndian,
+    BigEndian,
 }
 
 
@@ -17,8 +13,8 @@ pub enum Endianness {
 /// we need and the request will be fullfilled lazily. So the initial allocation does not take
 /// space and time.
 pub struct Memory {
-
     endianness: Endianness,
+    program_break: u32,
     data: Vec<u8>,
 }
 
@@ -27,6 +23,7 @@ impl Memory {
         Memory {
             endianness,
             data: vec![0; MEMORY_SIZE],
+            program_break: 0
         }
     }
 
@@ -40,10 +37,10 @@ impl Memory {
 
     pub fn read_halfword(&self, address: u32) -> u32 {
         match self.endianness {
-            Endianness::LITTLE_ENDIAN => {
+            Endianness::LittleEndian => {
                 (self.read_byte(address + 1) as u32) << 8 | (self.read_byte(address) as u32)
             }
-            Endianness::BIG_ENDIAN => {
+            Endianness::BigEndian => {
                 (self.read_byte(address) as u32) << 8 | (self.read_byte(address + 1) as u32)
             }
         }
@@ -51,10 +48,10 @@ impl Memory {
 
     pub fn read_word(&self, address: u32) -> u32 {
         match self.endianness {
-            Endianness::LITTLE_ENDIAN => {
+            Endianness::LittleEndian => {
                 (self.read_byte(address + 3) as u32) << 24 | (self.read_byte(address + 2) as u32) << 16 | (self.read_byte(address + 1) as u32) << 8 | (self.read_byte(address) as u32)
             }
-            Endianness::BIG_ENDIAN => {
+            Endianness::BigEndian => {
                 (self.read_byte(address) as u32) << 24 | (self.read_byte(address + 1) as u32) << 16 | (self.read_byte(address + 2) as u32) << 8 | (self.read_byte(address + 3) as u32)
             }
         }
@@ -66,11 +63,11 @@ impl Memory {
 
     pub fn write_halfword(&mut self, address: u32, value: u32) {
         match self.endianness {
-            Endianness::BIG_ENDIAN => {
+            Endianness::BigEndian => {
                 self.write_byte(address + 1, value >> 0);
                 self.write_byte(address + 0, value >> 8);
             }
-            Endianness::LITTLE_ENDIAN => {
+            Endianness::LittleEndian => {
                 self.write_byte(address + 0, value >> 0);
                 self.write_byte(address + 1, value >> 8);
             }
@@ -79,19 +76,31 @@ impl Memory {
 
     pub fn write_word(&mut self, address: u32, value: u32) {
         match self.endianness {
-            Endianness::BIG_ENDIAN => {
+            Endianness::BigEndian => {
                 self.write_byte(address + 3, value >> 0);
                 self.write_byte(address + 2, value >> 8);
                 self.write_byte(address + 1, value >> 16);
                 self.write_byte(address + 0, value >> 24);
             }
-            Endianness::LITTLE_ENDIAN => {
+            Endianness::LittleEndian => {
                 self.write_byte(address + 0, value >> 0);
                 self.write_byte(address + 1, value >> 8);
                 self.write_byte(address + 2, value >> 16);
                 self.write_byte(address + 3, value >> 24);
             }
         }
+    }
+
+    pub fn write_block_and_update_program_break(&mut self, address: u32, data: &[u8]) {
+        if data.len() == 0 { return; }
+
+        // FIXME Coredumps contain stack, but we want program break address to be lower than that
+        // so we just expect the program break to be lower than 0x70000000
+        if address + (data.len() as u32) < 0x70000000 {
+            self.program_break = self.program_break.max(address + (data.len() as u32));
+        }
+
+        self.write_block(address, data);
     }
 
     pub fn write_block(&mut self, address: u32, data: &[u8]) {
@@ -101,12 +110,24 @@ impl Memory {
         data_slice.copy_from_slice(data);
     }
 
+    pub fn get_slice(&self, start: usize, end: usize) -> &[u8]{
+        &self.data.as_slice()[start..end]
+    }
+
     pub fn translate_address(&self, address: u32) -> *const u8{
         self.data[address as usize..].as_ptr()
     }
 
     pub fn translate_address_mut(&mut self, address: u32) -> *mut u8{
         self.data[address as usize..].as_mut_ptr()
+    }
+
+    pub fn get_program_break(&self) -> u32 {
+        self.program_break
+    }
+
+    pub fn update_program_break(&mut self, new_value: u32) {
+        self.program_break = new_value;
     }
 
     pub fn initialize_stack_at(&mut self, address: u32, environment_variables: Vec<(String, String)>, arguments: Vec<String>) {
