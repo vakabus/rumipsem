@@ -1,5 +1,5 @@
 [package]
-name = "mips-emulator"
+name = "rumipsem"
 version = "0.1.0"
 authors = ["Vasek Sraier <git@vakabus.cz>"]
 
