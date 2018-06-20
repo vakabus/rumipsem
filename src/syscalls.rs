@@ -7,11 +7,8 @@ use std::ffi::CString;
 use cpu::registers::RegisterFile;
 use cpu::event::CPUEvent;
 use cpu::registers::STACK_POINTER;
-use std::iter::Sum;
 
-const AMD64_STAT64: usize = 195;
-const _LLSEEK: usize = 41406978;  // random number, hopefully no collisions occur
-
+#[allow(non_camel_case_types)]
 #[derive(Debug, Eq, PartialEq)]
 enum SyscallO32 {
     NRSyscall,
@@ -151,7 +148,6 @@ enum SyscallO32 {
     NRBdflush,
     NRSysfs,
     NRPersonality,
-    NRAfs_syscall,
     NRSetfsuid,
     NRSetfsgid,
     NR_llseek,
@@ -293,7 +289,6 @@ enum SyscallO32 {
     NRMq_getsetattr,
     NRVserver,
     NRWaitid,
-    NRNR_sys_setaltroot,
     NRAdd_key,
     NRRequest_key,
     NRKeyctl,
@@ -757,18 +752,18 @@ fn translate_syscall_number(sn: u32) -> SyscallO32 {
 }
 
 
-struct iovec {
+struct Iovec {
     pub iov_base: u32,
     pub iov_len: usize,
 }
 
-fn translate_iovec(iovec_addr: u32, iovcnt: u32, memory: &mut Memory) -> Vec<iovec> {
-    let mut iovec: Vec<iovec> = Vec::with_capacity(iovcnt as usize);
+fn translate_iovec(iovec_addr: u32, iovcnt: u32, memory: &mut Memory) -> Vec<Iovec> {
+    let mut iovec: Vec<Iovec> = Vec::with_capacity(iovcnt as usize);
     for i in 0..(iovcnt as u32) {
         let addr = memory.read_word(iovec_addr + i * 8);
         let len = memory.read_word(iovec_addr + i * 8 + 4);
 
-        iovec.push(iovec {
+        iovec.push(Iovec {
             iov_base: addr,
             iov_len: len as usize,
         });
@@ -776,7 +771,7 @@ fn translate_iovec(iovec_addr: u32, iovcnt: u32, memory: &mut Memory) -> Vec<iov
     iovec
 }
 
-pub fn eval_syscall<T>(inst: u32, registers: &mut RegisterFile<T>, memory: &mut Memory) -> CPUEvent
+pub fn eval_syscall<T>(_inst: u32, registers: &mut RegisterFile<T>, memory: &mut Memory) -> CPUEvent
     where T: Fn(u32, u32) {
     macro_rules! itrace {
         ($fmt:expr, $($arg:tt)*) => (
@@ -853,6 +848,16 @@ pub fn eval_syscall<T>(inst: u32, registers: &mut RegisterFile<T>, memory: &mut 
                     }
                 }
             }
+            SyscallO32::NRGetegid => {
+                itrace!("GETEGID");
+                if ::config::FAKE_ROOT {
+                    0
+                } else {
+                    unsafe {
+                        ::libc::getegid() as isize
+                    }
+                }
+            }
             SyscallO32::NRStat64 => {
                 panic!("This syscall was disabled!");
                 /*
@@ -896,7 +901,6 @@ pub fn eval_syscall<T>(inst: u32, registers: &mut RegisterFile<T>, memory: &mut 
                 itrace!("WRITEV (emulated)");
 
                 let fd = arg1 as i32;
-                let iovcnt = arg3 as i32;
                 let mut iovec = translate_iovec(arg2, arg3, memory);
                 let total_size = iovec.iter().map(|iov| iov.iov_len).sum();
                 let mut buffer = vec![0; total_size];
@@ -919,7 +923,7 @@ pub fn eval_syscall<T>(inst: u32, registers: &mut RegisterFile<T>, memory: &mut 
                 itrace!("READV (emulated)");
                 let fd = arg1 as i32;
                 let mut iovec = translate_iovec(arg2, arg3, memory);
-                let total_size = iovec.iter().map(|iovec: &iovec| iovec.iov_len).sum();
+                let total_size = iovec.iter().map(|iovec: &Iovec| iovec.iov_len).sum();
 
                 let mut buffer = vec![0u8; total_size];
                 let ptr = buffer.as_mut_slice().as_mut_ptr() as *mut ::libc::c_void;
@@ -945,10 +949,12 @@ pub fn eval_syscall<T>(inst: u32, registers: &mut RegisterFile<T>, memory: &mut 
             }
             SyscallO32::NROpen => {
                 let mut flags = arg2 as i32;
+                /*
                 let mips_O_LARGEFILE = 8192;
                 if flags & mips_O_LARGEFILE == mips_O_LARGEFILE {
                     flags ^= mips_O_LARGEFILE;
                 }
+                */
                 let (file, res) = unsafe {
                     (
                         CString::from_raw(memory.translate_address_mut(arg1) as *mut i8),

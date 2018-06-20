@@ -71,6 +71,4 @@ pub fn run_cpu(mut memory: Memory, cpu_config: CPUConfig) {
             }
         }
     }
-    println!("Program terminated gracefully");
-    info!("Program terminated gracefully");
 }

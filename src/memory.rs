@@ -132,15 +132,15 @@ impl Memory {
 
     pub fn initialize_stack_at(&mut self, address: u32, environment_variables: Vec<(String, String)>, arguments: Vec<String>) {
         assert_eq!(address % 8, 0);
-        println!("Generating new stack:");
+        debug!("Generating new stack:");
         let mut pointer_address = address + 4;
         let mut data_address = pointer_address + (1 + arguments.len() as u32 + 1 + environment_variables.len() as u32 + 1 + 40) * 4;
 
-        println!("\tArguments: {}", arguments.len());
+        debug!("\tArguments: {}", arguments.len());
         self.write_word(address, arguments.len() as u32);
         // arguments
         for argument in arguments {
-            println!("\t\tArg: \"{}\" at 0x{:x}", argument, data_address);
+            debug!("\t\tArg: \"{}\" at 0x{:x}", argument, data_address);
             self.write_word(pointer_address, data_address);
             pointer_address += 4;
 

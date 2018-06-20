@@ -180,7 +180,7 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
                 0b011000 => {
                     let op = get_shift(instruction);
                     match op {
-                        0b00011 => {
+                        0b00010 => {
                             let v1 = (registers.read_register(rs) as i32) as i64;
                             let v2 = (registers.read_register(rt) as i32) as i64;
                             let r = v1 * v2;
@@ -329,9 +329,11 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
             } else if rt == 0b10001 {
                 // if necessary, just remove this panic
                 panic!("BGEZAL was removed in release 6");
+                /*
                 inst = "BGEZAL";
                 higher = true;
                 equal = true;
+                */
             } else if rt == 0b00000 {
                 inst = "bltz";
                 lower = true;
@@ -535,7 +537,7 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
                 }
                 0b111011 => {
                     itrace!("rdhwr");
-                    let sel = get_offset(instruction) & 0x07;
+                    //let sel = get_offset(instruction) & 0x07;
                     match rd {
                         29 => {
                             // should throw an exception

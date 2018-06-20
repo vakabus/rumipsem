@@ -126,7 +126,7 @@ pub fn read_trace(tracefile: &str) -> Vec<InstructionRecord> {
     let gz = GzDecoder::new(f).expect("Could not read GZIPed trace.");
     let file = BufReader::new(gz);
     let mut real_trace = Vec::new();
-    for (num, line) in file.lines().enumerate() {
+    for (_num, line) in file.lines().enumerate() {
         let line = line.unwrap();
         if let Ok(record) = serde_json::from_str(&line) {
             real_trace.push(record);
