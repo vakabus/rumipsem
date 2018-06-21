@@ -9,14 +9,14 @@ use std::io::Read;
 use cpu::event::CPUEvent;
 
 #[derive(Debug)]
-pub struct CPUConfig<'a> {
-    pub tracefile: Option<&'a str>,
+pub struct CPUConfig {
+    pub tracefile: Option<String>,
     pub entry_point: u32,
     pub stack_pointer: u32,
 }
 
 pub fn run_cpu(mut memory: Memory, cpu_config: CPUConfig) {
-    info!("Running CPU with configuration: {:?}", cpu_config);
+    info!("Running CPU with configuration {:?}", cpu_config);
 
     let watchdog_status = RefCell::from(Watchdog::new(cpu_config.tracefile));
 

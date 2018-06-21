@@ -23,7 +23,7 @@ impl Memory {
         Memory {
             endianness,
             data: vec![0; MEMORY_SIZE],
-            program_break: 0
+            program_break: 0,
         }
     }
 
@@ -91,6 +91,114 @@ impl Memory {
         }
     }
 
+    /// SWL instruction support
+    pub fn write_word_unaligned_swl(&mut self, address: u32, value: u32) {
+        let vaddr = address % 4;
+        // Spagetti code, but understandable
+        match self.endianness {
+            Endianness::BigEndian => {
+                match vaddr {
+                    0 => {
+                        self.write_byte(address + 3, value >> 0);
+                        self.write_byte(address + 2, value >> 8);
+                        self.write_byte(address + 1, value >> 16);
+                        self.write_byte(address + 0, value >> 24);
+                    },
+                    1 => {
+                        self.write_byte(address + 3, value >> 8);
+                        self.write_byte(address + 2, value >> 16);
+                        self.write_byte(address + 1, value >> 24);
+                    },
+                    2 => {
+                        self.write_byte(address + 3, value >> 16);
+                        self.write_byte(address + 2, value >> 24);
+                    }
+                    3 => {
+                        self.write_byte(address + 3, value >> 24);
+                    }
+                    _ => unreachable!()
+                }
+            }
+            Endianness::LittleEndian => {
+                match vaddr {
+                    0 => {
+                        self.write_byte(address + 3, value >> 24);
+                    }
+                    1 => {
+                        self.write_byte(address + 3, value >> 16);
+                        self.write_byte(address + 2, value >> 24);
+                    }
+                    2 => {
+                        self.write_byte(address + 3, value >> 8);
+                        self.write_byte(address + 2, value >> 16);
+                        self.write_byte(address + 1, value >> 24);
+                    },
+                    3 => {
+                        self.write_byte(address + 3, value >> 0);
+                        self.write_byte(address + 2, value >> 8);
+                        self.write_byte(address + 1, value >> 16);
+                        self.write_byte(address + 0, value >> 24);
+                    },
+                    _ => unreachable!()
+                }
+            }
+        }
+    }
+
+    /// SWR instruction support
+    pub fn write_word_unaligned_swr(&mut self, address: u32, value: u32) {
+        let vaddr = address % 4;
+        // spagetti again, yay
+        match self.endianness {
+            Endianness::BigEndian => {
+                match vaddr {
+                    0 => {
+                        self.write_byte(address + 0, value >> 0);
+                    }
+                    1 => {
+                        self.write_byte(address + 0, value >> 8);
+                        self.write_byte(address + 1, value >> 0);
+                    }
+                    2 => {
+                        self.write_byte(address + 0, value >> 16);
+                        self.write_byte(address + 1, value >> 8);
+                        self.write_byte(address + 2, value >> 0);
+                    },
+                    3 => {
+                        self.write_byte(address + 0, value >> 24);
+                        self.write_byte(address + 1, value >> 16);
+                        self.write_byte(address + 2, value >> 8);
+                        self.write_byte(address + 3, value >> 0);
+                    },
+                    _ => unreachable!()
+                }
+            }
+            Endianness::LittleEndian => {
+                match vaddr {
+                    0 => {
+                        self.write_byte(address + 0, value >> 24);
+                        self.write_byte(address + 1, value >> 16);
+                        self.write_byte(address + 2, value >> 8);
+                        self.write_byte(address + 3, value >> 0);
+                    },
+                    1 => {
+                        self.write_byte(address + 0, value >> 16);
+                        self.write_byte(address + 1, value >> 8);
+                        self.write_byte(address + 2, value >> 0);
+                    },
+                    2 => {
+                        self.write_byte(address + 0, value >> 8);
+                        self.write_byte(address + 1, value >> 0);
+                    }
+                    3 => {
+                        self.write_byte(address + 0, value >> 0);
+                    }
+                    _ => unreachable!()
+                }
+            }
+        }
+    }
+
     pub fn write_block_and_update_program_break(&mut self, address: u32, data: &[u8]) {
         if data.len() == 0 { return; }
 
@@ -110,15 +218,15 @@ impl Memory {
         data_slice.copy_from_slice(data);
     }
 
-    pub fn get_slice(&self, start: usize, end: usize) -> &[u8]{
+    pub fn get_slice(&self, start: usize, end: usize) -> &[u8] {
         &self.data.as_slice()[start..end]
     }
 
-    pub fn translate_address(&self, address: u32) -> *const u8{
+    pub fn translate_address(&self, address: u32) -> *const u8 {
         self.data[address as usize..].as_ptr()
     }
 
-    pub fn translate_address_mut(&mut self, address: u32) -> *mut u8{
+    pub fn translate_address_mut(&mut self, address: u32) -> *mut u8 {
         self.data[address as usize..].as_mut_ptr()
     }
 
@@ -225,7 +333,6 @@ impl Memory {
         write_vector(23, 0);
         write_vector(25, 0x7F_FF_FF_18);
         write_vector(31, 0x7F_FF_FF_ED);
-        write_vector(0,0);
-
+        write_vector(0, 0);
     }
 }

@@ -51,6 +51,6 @@ fn test_apply_offset() {
 
 #[test]
 fn test_sign_extend() {
-    assert_eq!(sign_extend(0xFF, 8), 0xFF_FF_FF_FF);
-    assert_eq!(sign_extend(0x00_FF_FF_FF, 24), 0xFF_FF_FF_FF);
+    assert_eq!(sign_extend(0xFF, 8), -1);
+    assert_eq!(sign_extend(0x00_FF_FF_FF, 24), -1);
 }

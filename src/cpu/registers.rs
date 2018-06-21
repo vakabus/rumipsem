@@ -1,5 +1,8 @@
 
+pub const V0: u32 = 2;
+pub const A3: u32 = 7;
 pub const STACK_POINTER: u32 = 29;
+
 
 pub struct RegisterFile<F> where F: Fn(u32, u32) {
     reg: [u32; 31],

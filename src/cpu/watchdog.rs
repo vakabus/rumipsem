@@ -16,9 +16,12 @@ pub struct Watchdog {
 }
 
 impl Watchdog {
-    pub fn new(tracefile: Option<&str>) -> Watchdog {
+    pub fn new(tracefile: Option<String>) -> Watchdog {
         let real_trace = if let Some(tracefile) = tracefile {
-            Some(read_trace(tracefile))
+            info!("Loading trace into memory...");
+            let res = Some(read_trace(tracefile));
+            info!("Trace loaded...");
+            res
         } else {
             None
         };
@@ -82,7 +85,7 @@ impl Watchdog {
             }
 
 
-            if ::config::FULL_REGISTER_VALUES_CHECK && !self.trace_gap{
+            if ::config::FULL_REGISTER_VALUES_CHECK && !self.trace_gap {
                 for (reg, val) in &instruction_record.registers {
                     // exclude these registers
                     match *reg {
@@ -108,8 +111,10 @@ impl Watchdog {
     }
 
     pub fn atomic_read_modify_write_began(&mut self) {
-        warn!("Trace checking temporarily disabled - atomic read-modify-write block. This is here to bypass GDB limitations...");
-        self.trace_gap = true;
+        if self.real_trace.is_some() {
+            warn!("Trace checking temporarily disabled - atomic read-modify-write block. This is here to bypass GDB limitations...");
+            self.trace_gap = true;
+        }
     }
 }
 
@@ -121,8 +126,8 @@ pub struct InstructionRecord {
 }
 
 
-pub fn read_trace(tracefile: &str) -> Vec<InstructionRecord> {
-    let f = File::open(tracefile).unwrap();
+pub fn read_trace(tracefile: String) -> Vec<InstructionRecord> {
+    let f = File::open(tracefile.as_str()).unwrap();
     let gz = GzDecoder::new(f).expect("Could not read GZIPed trace.");
     let file = BufReader::new(gz);
     let mut real_trace = Vec::new();

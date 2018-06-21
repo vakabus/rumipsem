@@ -227,6 +227,15 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
                 0b011010 => {
                     let op = get_shift(instruction);
                     match op {
+                        0b00000 => {
+                            assert_eq!(rd, 0);
+                            // warn!("Deprecated DIV instruction. Removed in release 6 of MIPS32");
+                            itrace!("divu\t{},{}", get_register_name(rs), get_register_name(rt));
+                            let l = (registers.read_register(rs) as i32) / (registers.read_register(rt) as i32);
+                            let h = (registers.read_register(rs) as i32) % (registers.read_register(rt) as i32);
+                            registers.write_lo(l as u32);
+                            registers.write_hi(h as u32);
+                        }
                         _ => {
                             error!("Unknown SOP32 instruction code: {:05b}", op);
                             panic!("Unknown instruction");
@@ -239,7 +248,7 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
                     match op {
                         0b00000 => {
                             assert_eq!(rd, 0);
-                            warn!("Deprecated DIVU instruction. Removed in release 6 of MIPS32");
+                            // warn!("Deprecated DIVU instruction. Removed in release 6 of MIPS32");
                             itrace!("divu\t{},{}", get_register_name(rs), get_register_name(rt));
                             let l = registers.read_register(rs) / registers.read_register(rt);
                             let h = registers.read_register(rs) % registers.read_register(rt);
@@ -266,7 +275,7 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
                     assert_eq!(rs, 0);
                     assert_eq!(get_shift(instruction), 0);
                     itrace!("mfhi\t{}", get_register_name(rd));
-                    warn!("Deprecated MFHI instruction. Removed in release 6 of MIPS32");
+                    //warn!("Deprecated MFHI instruction. Removed in release 6 of MIPS32");
                     let r = registers.read_hi();
                     registers.write_register(rd, r);
                 }
@@ -275,7 +284,7 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
                     assert_eq!(rs, 0);
                     assert_eq!(get_shift(instruction), 0);
                     itrace!("mflo\t{}", get_register_name(rd));
-                    warn!("Deprecated MFLO instruction. Removed in release 6 of MIPS32");
+                    //warn!("Deprecated MFLO instruction. Removed in release 6 of MIPS32");
                     let r = registers.read_lo();
                     registers.write_register(rd, r);
                 }
@@ -286,6 +295,12 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
                 // SYNC
                 0b001111 => {
                     itrace!("sync - instruction ignored");
+                }
+                // BREAK
+                0b001101 => {
+                    itrace!("break");
+                    error!("Breakpoint instruction reached. No idea, how to continue. Terminating!");
+                    panic!();
                 }
                 _ => {
                     error!("Unsupported ALU operation function code 0b{:06b}", funct);
@@ -467,6 +482,18 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
             let address = add_signed_offset(registers.read_register(rs), get_offset(instruction));
             itrace!("sw\t{},0x{:x} - data=0x{:08x}", get_register_name(rt), address, registers.read_register(rt));
             memory.write_word(address, registers.read_register(rt));
+        }
+        // SWL
+        0b101010 => {
+            let address = add_signed_offset(registers.read_register(rs), get_offset(instruction));
+            itrace!("swl\t{},0x{:x} - data=0x{:08x} (only part of the data will be stored)", get_register_name(rt), address, registers.read_register(rt));
+            memory.write_word_unaligned_swl(address, registers.read_register(rt));
+        }
+        // SWR
+        0b101110 => {
+            let address = add_signed_offset(registers.read_register(rs), get_offset(instruction));
+            itrace!("swr\t{},0x{:x} - data=0x{:08x} (only part of the data will be stored)", get_register_name(rt), address, registers.read_register(rt));
+            memory.write_word_unaligned_swr(address, registers.read_register(rt));
         }
         // SC
         0b111000 => {
