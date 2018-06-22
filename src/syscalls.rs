@@ -1,16 +1,15 @@
+use cpu::event::CPUEvent;
+use cpu::registers::A3;
+use cpu::registers::RegisterFile;
+use cpu::registers::V0;
+use cpu::registers::STACK_POINTER;
+use cpu::control::CPUFlags;
 /// List of MIPS syscall numbers can be found here:
 /// https://github.com/torvalds/linux/blob/master/arch/mips/include/uapi/asm/unistd.h
-
-
-use ::memory::Memory;
-use std::ffi::CString;
-use cpu::registers::RegisterFile;
-use cpu::event::CPUEvent;
-use cpu::registers::STACK_POINTER;
-use std::io::Error;
-use cpu::registers::A3;
-use cpu::registers::V0;
+use memory::Memory;
 use num_traits::cast::ToPrimitive;
+use std::ffi::CString;
+use std::io::Error;
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, Eq, PartialEq)]
@@ -383,7 +382,6 @@ enum SyscallO32 {
     NRUnknown,
 }
 
-
 fn translate_syscall_number(sn: u32) -> SyscallO32 {
     match sn {
         4000 => SyscallO32::NRSyscall,
@@ -755,7 +753,6 @@ fn translate_syscall_number(sn: u32) -> SyscallO32 {
     }
 }
 
-
 struct Iovec {
     pub iov_base: u32,
     pub iov_len: usize,
@@ -771,7 +768,7 @@ fn translate_iovec(iovec_addr: u32, iovcnt: u32, memory: &mut Memory) -> Vec<Iov
             iov_base: addr,
             iov_len: len as usize,
         });
-    };
+    }
     iovec
 }
 
@@ -785,7 +782,7 @@ fn translate_iovec_libc(iovec_addr: u32, iovcnt: u32, memory: &mut Memory) -> Ve
             iov_base: memory.translate_address_mut(addr) as *mut ::libc::c_void,
             iov_len: len as usize,
         });
-    };
+    }
     iovec
 }
 
@@ -799,8 +796,10 @@ fn check_error<T: Default + Ord + ToPrimitive>(num: T) -> Result<u32, Error> {
     }
 }
 
-pub fn eval_syscall<T>(_inst: u32, registers: &mut RegisterFile<T>, memory: &mut Memory) -> CPUEvent
-    where T: Fn(u32, u32) {
+pub fn eval_syscall<T>(_inst: u32, registers: &mut RegisterFile<T>, memory: &mut Memory, flags: &CPUFlags) -> CPUEvent
+where
+    T: Fn(u32, u32),
+{
     macro_rules! itrace {
         ($fmt:expr, $($arg:tt)*) => (
             info!(concat!("0x{:x}:\tsyscall\t", $fmt), registers.get_pc(), $($arg)*);
@@ -809,7 +808,6 @@ pub fn eval_syscall<T>(_inst: u32, registers: &mut RegisterFile<T>, memory: &mut
             info!(concat!("0x{:x}:\tsyscall\t", $fmt), registers.get_pc());
         );
     }
-
 
     let syscall_number = registers.read_register(2);
     let arg1 = registers.read_register(4);
@@ -821,7 +819,10 @@ pub fn eval_syscall<T>(_inst: u32, registers: &mut RegisterFile<T>, memory: &mut
     let mut exit = CPUEvent::Nothing;
 
     if translated_syscall_number == SyscallO32::NRUnknown {
-        error!("sysnum={} arg1={} arg2={} arg3={} arg4={}\n", syscall_number, arg1, arg2, arg3, arg4);
+        error!(
+            "sysnum={} arg1={} arg2={} arg3={} arg4={}\n",
+            syscall_number, arg1, arg2, arg3, arg4
+        );
         error!("Failed to translate syscall.");
         panic!("Unknown SYSCALL");
     } else {
@@ -845,46 +846,42 @@ pub fn eval_syscall<T>(_inst: u32, registers: &mut RegisterFile<T>, memory: &mut
                 Ok(0)
             }
             SyscallO32::NRGetuid => {
-                if ::config::FAKE_ROOT {
+                if flags.fake_root {
                     itrace!("GETUID (faked)");
                     Ok(0)
                 } else {
                     itrace!("GETUID (real)");
-                    check_error(unsafe {
-                        ::libc::getuid()
-                    })
+                    check_error(unsafe { ::libc::getuid() })
                 }
             }
             SyscallO32::NRGeteuid => {
-                if ::config::FAKE_ROOT {
+                if flags.fake_root {
                     itrace!("GETEUID (faked)");
                     Ok(0)
                 } else {
                     itrace!("GETEUID (real)");
-                    check_error(unsafe {
-                        ::libc::getuid()
-                    })
+                    check_error(unsafe { ::libc::getuid() })
                 }
             }
             SyscallO32::NRGetgid => {
                 itrace!("GETGID");
-                if ::config::FAKE_ROOT {
+                if flags.fake_root {
                     Ok(0)
                 } else {
-                    check_error(unsafe {
-                        ::libc::getgid()
-                    })
+                    check_error(unsafe { ::libc::getgid() })
                 }
             }
             SyscallO32::NRGetegid => {
                 itrace!("GETEGID");
-                if ::config::FAKE_ROOT {
+                if flags.fake_root {
                     Ok(0)
                 } else {
-                    check_error(unsafe {
-                        ::libc::getegid()
-                    })
+                    check_error(unsafe { ::libc::getegid() })
                 }
+            }
+            SyscallO32::NRGetpid => {
+                itrace!("GETPID");
+                check_error(unsafe { ::libc::getpid() } )
             }
             SyscallO32::NRStat64 => {
                 //panic!("This syscall was disabled!");
@@ -894,22 +891,31 @@ pub fn eval_syscall<T>(_inst: u32, registers: &mut RegisterFile<T>, memory: &mut
                 let (file, res) = unsafe {
                     (
                         CString::from_raw(memory.translate_address_mut(arg1) as *mut i8),
-                        ::libc::stat(memory.translate_address(arg1) as *mut i8, memory.translate_address_mut(arg2) as *mut ::libc::stat)
+                        ::libc::stat(
+                            memory.translate_address(arg1) as *mut i8,
+                            memory.translate_address_mut(arg2) as *mut ::libc::stat,
+                        ),
                     )
                 };
-                itrace!("STAT64 file={:?} struct_at=0x{:08x} res={}", file, arg2, res);
+                itrace!(
+                    "STAT64 file={:?} struct_at=0x{:08x} res={}",
+                    file,
+                    arg2,
+                    res
+                );
                 check_error(res)
-
             }
             SyscallO32::NRIoctl => {
                 itrace!("IOCTL a0={} a1=0x{:x} a2=0x{:x}", arg1, arg2, arg3);
                 warn!("Syscall IOCTL might not work as expected due to struct translation missing and probably impossible.");
 
                 let fd = arg1;
-                if ::config::BLOCK_IOCTL_ON_STDIO && fd < 3 {
+                if flags.block_ioctl_on_stdio && fd < 3 {
                     warn!("IOCTL ignored - manipulating with FD<=2");
                     Ok(0)
-                } else {
+                } else if flags.ioctl_fail_always {
+                    Err(Error::from_raw_os_error(::libc::EINVAL))
+                } else  {
                     check_error(unsafe {
                         ::libc::ioctl(arg1 as i32, arg2 as u64, memory.translate_address(arg3))
                     })
@@ -918,15 +924,17 @@ pub fn eval_syscall<T>(_inst: u32, registers: &mut RegisterFile<T>, memory: &mut
             SyscallO32::NRDup2 => {
                 itrace!("DUP2 oldfd={} newfd={}", arg1, arg2);
 
-                check_error(unsafe {
-                    ::libc::dup2(arg1 as i32, arg2 as i32)
-                })
+                check_error(unsafe { ::libc::dup2(arg1 as i32, arg2 as i32) })
             }
             SyscallO32::NRWrite => {
                 itrace!("WRITE");
 
                 check_error(unsafe {
-                    ::libc::write(arg1 as i32, memory.translate_address(arg2) as *const ::libc::c_void, arg3 as usize)
+                    ::libc::write(
+                        arg1 as i32,
+                        memory.translate_address(arg2) as *const ::libc::c_void,
+                        arg3 as usize,
+                    )
                 })
             }
             SyscallO32::NRWritev => {
@@ -941,7 +949,11 @@ pub fn eval_syscall<T>(_inst: u32, registers: &mut RegisterFile<T>, memory: &mut
                     let mut iovec = translate_iovec_libc(arg2, arg3, memory);
 
                     check_error(unsafe {
-                        ::libc::writev(fd as i32, iovec.as_slice().as_ptr() as *const ::libc::iovec, arg3 as i32)
+                        ::libc::writev(
+                            fd as i32,
+                            iovec.as_slice().as_ptr() as *const ::libc::iovec,
+                            arg3 as i32,
+                        )
                     })
                 } else {
                     // This branch here carefully copies data from emulated memory to single buffer
@@ -954,7 +966,10 @@ pub fn eval_syscall<T>(_inst: u32, registers: &mut RegisterFile<T>, memory: &mut
                     let mut i = 0;
                     for iov in iovec.into_iter() {
                         let bufslice = &mut buffer.as_mut_slice()[i..i + iov.iov_len];
-                        let memslice = memory.get_slice(iov.iov_base as usize, (iov.iov_base as usize) + iov.iov_len);
+                        let memslice = memory.get_slice(
+                            iov.iov_base as usize,
+                            (iov.iov_base as usize) + iov.iov_len,
+                        );
                         bufslice.copy_from_slice(memslice);
                         i += iov.iov_len;
                     }
@@ -965,6 +980,14 @@ pub fn eval_syscall<T>(_inst: u32, registers: &mut RegisterFile<T>, memory: &mut
                     })
                 }
             }
+            SyscallO32::NRRead => {
+                let fd = arg1 as i32;
+                let size = arg3 as usize;
+                itrace!("READ fd={} buf_size={}", fd, size);
+                let ptr = memory.translate_address_mut(arg2) as *mut ::libc::c_void;
+                
+                check_error(unsafe { ::libc::read(fd, ptr, size) })
+            }
             SyscallO32::NRReadv => {
                 itrace!("READV (emulated)");
                 let fd = arg1 as i32;
@@ -974,9 +997,7 @@ pub fn eval_syscall<T>(_inst: u32, registers: &mut RegisterFile<T>, memory: &mut
                 let mut buffer = vec![0u8; total_size];
                 let ptr = buffer.as_mut_slice().as_mut_ptr() as *mut ::libc::c_void;
 
-                let data_read = unsafe {
-                    ::libc::read(fd, ptr, total_size)
-                };
+                let data_read = unsafe { ::libc::read(fd, ptr, total_size) };
 
                 if data_read == -1 {
                     check_error(data_read)
@@ -985,7 +1006,11 @@ pub fn eval_syscall<T>(_inst: u32, registers: &mut RegisterFile<T>, memory: &mut
                         let mut data_read = data_read as usize;
                         let mut already_written = 0;
                         for iov in iovec.into_iter() {
-                            let l = if data_read > iov.iov_len { iov.iov_len } else { data_read };
+                            let l = if data_read > iov.iov_len {
+                                iov.iov_len
+                            } else {
+                                data_read
+                            };
                             let slice = &buffer.as_slice()[already_written..already_written + l];
                             memory.write_block(iov.iov_base, slice);
                             data_read -= l;
@@ -1010,7 +1035,7 @@ pub fn eval_syscall<T>(_inst: u32, registers: &mut RegisterFile<T>, memory: &mut
                 let (file, res) = unsafe {
                     (
                         CString::from_raw(memory.translate_address_mut(arg1) as *mut i8),
-                        ::libc::open(memory.translate_address(arg1) as *const i8, flags)
+                        ::libc::open(memory.translate_address(arg1) as *const i8, flags),
                     )
                 };
                 itrace!("OPEN file={:?} flags=0x{:08x} res_fd={}", file, arg2, res);
@@ -1021,12 +1046,15 @@ pub fn eval_syscall<T>(_inst: u32, registers: &mut RegisterFile<T>, memory: &mut
 
                 itrace!("CLOSE fd={}", fd);
 
-                check_error(unsafe {
-                    ::libc::close(fd as i32) as isize
-                })
+                check_error(unsafe { ::libc::close(fd as i32) as isize })
             }
             SyscallO32::NRExit_group => {
                 itrace!("EXIT_GROUP");
+                exit = CPUEvent::Exit;
+                Ok(0)
+            }
+            SyscallO32::NRExit => {
+                itrace!("EXIT");
                 exit = CPUEvent::Exit;
                 Ok(0)
             }
@@ -1038,9 +1066,7 @@ pub fn eval_syscall<T>(_inst: u32, registers: &mut RegisterFile<T>, memory: &mut
                 let result_pointer = arg4;
                 let whence = memory.read_word(registers.read_register(STACK_POINTER) + 4 * 4);
 
-                let mut result = unsafe {
-                    ::libc::lseek(fd as i32, offset, whence as i32)
-                };
+                let mut result = unsafe { ::libc::lseek(fd as i32, offset, whence as i32) };
 
                 if result != -1 {
                     memory.write_word(result_pointer, result as u32);
@@ -1054,21 +1080,42 @@ pub fn eval_syscall<T>(_inst: u32, registers: &mut RegisterFile<T>, memory: &mut
                 let buf_addr = arg1;
                 let buf_size = arg2;
 
-                let (res, cwd) = unsafe {
-                    (::libc::getcwd(memory.translate_address_mut(buf_addr) as *mut ::libc::c_char, buf_size as usize) as usize,
-                     CString::from_raw(memory.translate_address_mut(buf_addr) as *mut i8))
-                };
-
-                itrace!("GETCWD cwd={:?} res={:x}", cwd, res);
-                if res == 0 {
-                    check_error(res)
-                } else {
+                if flags.fake_root_directory && buf_size >= 6 {
+                    memory.write_byte(buf_addr + 0, '/' as u32);
+                    memory.write_byte(buf_addr + 1, 'r' as u32);
+                    memory.write_byte(buf_addr + 2, 'o' as u32);
+                    memory.write_byte(buf_addr + 3, 'o' as u32);
+                    memory.write_byte(buf_addr + 4, 't' as u32);
+                    memory.write_byte(buf_addr + 5, 0);
                     Ok(buf_addr)
+                } else {
+                    let (res, cwd) = unsafe {
+                        (
+                            ::libc::getcwd(
+                                memory.translate_address_mut(buf_addr) as *mut ::libc::c_char,
+                                buf_size as usize,
+                            ) as usize,
+                            CString::from_raw(memory.translate_address_mut(buf_addr) as *mut i8),
+                        )
+                    };
+
+                    itrace!("GETCWD cwd={:?} res={:x}", cwd, res);
+                    if res == 0 {
+                        check_error(res)
+                    } else {
+                        Ok(buf_addr)
+                    }
                 }
             }
             _ => {
-                error!("sysnum={} arg1={} arg2={} arg3={} arg4={}\n", syscall_number, arg1, arg2, arg3, arg4);
-                panic!("Syscall translated, but unknown. OrigNum={} TrNum={:?}", syscall_number, translated_syscall_number)
+                error!(
+                    "sysnum={} arg1={} arg2={} arg3={} arg4={}\n",
+                    syscall_number, arg1, arg2, arg3, arg4
+                );
+                panic!(
+                    "Syscall translated, but unknown. OrigNum={} TrNum={:?}",
+                    syscall_number, translated_syscall_number
+                )
             }
         };
 
@@ -1078,7 +1125,10 @@ pub fn eval_syscall<T>(_inst: u32, registers: &mut RegisterFile<T>, memory: &mut
                 registers.write_register(A3, 0); // no error
             }
             Err(err) => {
-                registers.write_register(V0, err.raw_os_error().expect("Could not access errno.") as u32);
+                registers.write_register(
+                    V0,
+                    err.raw_os_error().expect("Could not access errno.") as u32,
+                );
                 registers.write_register(A3, 1); // error
             }
         }

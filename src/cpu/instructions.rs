@@ -4,8 +4,9 @@ use memory::Memory;
 use syscalls::eval_syscall;
 use cpu::bitutils::*;
 use cpu::event::*;
+use cpu::control::*;
 
-pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, memory: &mut Memory) -> CPUEvent
+pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, memory: &mut Memory, cpu_config: &CPUConfig) -> CPUEvent
     where T: Fn(u32, u32) {
     let mut result_cpu_event = CPUEvent::Nothing;
 
@@ -290,7 +291,7 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
                 }
                 // SYSCALL
                 0b001100 => {
-                    result_cpu_event = eval_syscall(instruction, registers, memory);
+                    result_cpu_event = eval_syscall(instruction, registers, memory, &cpu_config.flags);
                 }
                 // SYNC
                 0b001111 => {
@@ -444,6 +445,13 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
             itrace!("lhu\tdata={:08x}", r);
             registers.write_register(rt, r);
         }
+        //LH
+        0b100001 => {
+            let r = memory.read_halfword(add_signed_offset(registers.read_register(rs), get_offset(instruction)));
+            itrace!("lh\tdata={:08x}", r);
+            let r = sign_extend(r, 16) as u32;
+            registers.write_register(rt, r);
+        }
         // LBU
         0b100100 => {
             let addr = add_signed_offset(registers.read_register(rs), get_offset(instruction));
@@ -458,6 +466,7 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
             itrace!("lw\t{},0x{:x} - data=0x{:08x}", get_register_name(rt), addr, r);
             registers.write_register(rt, r);
         }
+
         // LL
         0b110000 => {
             let addr = add_signed_offset(registers.read_register(rs), get_offset(instruction));

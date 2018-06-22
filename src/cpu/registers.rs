@@ -27,9 +27,7 @@ impl<F> RegisterFile<F> where F: Fn(u32, u32) {
         };
 
         // runtime check
-        if ::config::CHECKED_REGISTER_READS {
-            (self.read_hook)(id, res);
-        }
+        (self.read_hook)(id, res);
 
         res
     }

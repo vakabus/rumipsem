@@ -7,16 +7,18 @@ use flate2::read::GzDecoder;
 use cpu::registers::RegisterFile;
 use memory::Memory;
 use cpu::registers::get_register_name;
+use cpu::control::CPUFlags;
 
-pub struct Watchdog {
+pub struct Watchdog<'a> {
     instruction_number: usize,
     real_trace: Option<Vec<InstructionRecord>>,
     nop_count: usize,
     trace_gap: bool,
+    cpu_flags: &'a CPUFlags,
 }
 
-impl Watchdog {
-    pub fn new(tracefile: Option<String>) -> Watchdog {
+impl<'a> Watchdog<'a> {
+    pub fn new(tracefile: Option<String>, cpu_flags: &'a CPUFlags) -> Watchdog<'a> {
         let real_trace = if let Some(tracefile) = tracefile {
             info!("Loading trace into memory...");
             let res = Some(read_trace(tracefile));
@@ -31,19 +33,21 @@ impl Watchdog {
             real_trace,
             nop_count: 0,
             trace_gap: false,
+            cpu_flags,
         }
     }
 
     pub fn check_read(&self, reg: u32, val: u32) {
-        if self.trace_gap {
+        if !self.cpu_flags.checked_register_reads || self.trace_gap {
             return;
         }
+
         if let Some(trace) = self.real_trace.as_ref() {
             let res = trace.get(self.instruction_number - 1).expect("Trace not long enough.").registers.get(&reg);
             if let Some(res) = res {
                 if *res != val {
                     error!("Value 0x{:x} was read from register {}. Should have been 0x{:x}", val, get_register_name(reg), *res);
-                    if ::config::PANIC_ON_INVALID_READ {
+                    if self.cpu_flags.panic_on_invalid_read {
                         panic!("Read wrong value from register...");
                     }
                 }
@@ -85,7 +89,7 @@ impl Watchdog {
             }
 
 
-            if ::config::FULL_REGISTER_VALUES_CHECK && !self.trace_gap {
+            if self.cpu_flags.full_register_values_check && !self.trace_gap {
                 for (reg, val) in &instruction_record.registers {
                     // exclude these registers
                     match *reg {
