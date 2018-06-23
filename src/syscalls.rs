@@ -907,15 +907,16 @@ where
             }
             SyscallO32::NRIoctl => {
                 itrace!("IOCTL a0={} a1=0x{:x} a2=0x{:x}", arg1, arg2, arg3);
-                warn!("Syscall IOCTL might not work as expected due to struct translation missing and probably impossible.");
 
                 let fd = arg1;
                 if flags.block_ioctl_on_stdio && fd < 3 {
-                    warn!("IOCTL ignored - manipulating with FD<=2");
+                    warn!("IOCTL ignored - manipulating with FD<=2. Returning success.");
                     Ok(0)
                 } else if flags.ioctl_fail_always {
+                    warn!("IOCTL forced to fail! Returning EINVAL.");
                     Err(Error::from_raw_os_error(::libc::EINVAL))
                 } else  {
+                    warn!("Syscall IOCTL might not work as expected due to struct translation missing and probably impossible.");
                     check_error(unsafe {
                         ::libc::ioctl(arg1 as i32, arg2 as u64, memory.translate_address(arg3))
                     })

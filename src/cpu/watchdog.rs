@@ -46,7 +46,7 @@ impl<'a> Watchdog<'a> {
             let res = trace.get(self.instruction_number - 1).expect("Trace not long enough.").registers.get(&reg);
             if let Some(res) = res {
                 if *res != val {
-                    error!("Value 0x{:x} was read from register {}. Should have been 0x{:x}", val, get_register_name(reg), *res);
+                    warn!("Value 0x{:x} was read from register {}. Should have been 0x{:x}", val, get_register_name(reg), *res);
                     if self.cpu_flags.panic_on_invalid_read {
                         panic!("Read wrong value from register...");
                     }

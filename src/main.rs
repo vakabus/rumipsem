@@ -102,7 +102,7 @@ pub fn run_binary(path: String, arguments: Vec<String>, flags: CPUFlags) {
     info!("Program terminated gracefully");
 }
 
-#[test]
+//#[test]
 fn test_busybox_noarg_coredump() {
     run_coredump(
         "mips_binaries/core_busybox-mips_noarg/coredump".to_string(),

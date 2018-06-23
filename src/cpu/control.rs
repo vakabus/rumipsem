@@ -30,13 +30,13 @@ pub struct CPUFlags {
 impl CPUFlags {
     pub fn default() -> CPUFlags {
         CPUFlags {
-            fake_root: true,
-            fake_root_directory: true,
+            fake_root: false,
+            fake_root_directory: false,
             checked_register_reads: true,
             full_register_values_check: false,
             panic_on_invalid_read: false,
             block_ioctl_on_stdio: false,
-            ioctl_fail_always: true,
+            ioctl_fail_always: false,
         }
     }
 }

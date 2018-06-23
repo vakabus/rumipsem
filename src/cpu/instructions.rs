@@ -577,7 +577,7 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
                     match rd {
                         29 => {
                             // should throw an exception
-                            warn!("Attempt to read from COPROCESSOR. Unsupported. Faking it.");
+                            warn!("Attempt to read from UserLocalRegister in coprocessor. Unsupported. Faking it with some constant value.");
                             registers.write_register(rt, 0x58e950);     // this value was copied from gdb on real HW
                             // UserLocal Register. This register provides read access to the coprocessor 0
                             // UserLocal register, if it is implemented.
