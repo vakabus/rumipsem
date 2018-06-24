@@ -5,7 +5,6 @@ pub enum Endianness {
     BigEndian,
 }
 
-
 /// This simple data structure represents the 4GB RAM of the emulated machine. But we don't want
 /// to hold onto 4GB of real RAM, when we don't actually need it. The trick here is, that when
 /// we create the Vector filled with zeros, Rust runtime will trust the OS to provide zeroed
@@ -49,12 +48,80 @@ impl Memory {
     pub fn read_word(&self, address: u32) -> u32 {
         match self.endianness {
             Endianness::LittleEndian => {
-                (self.read_byte(address + 3) as u32) << 24 | (self.read_byte(address + 2) as u32) << 16 | (self.read_byte(address + 1) as u32) << 8 | (self.read_byte(address) as u32)
+                (self.read_byte(address + 3) as u32) << 24
+                    | (self.read_byte(address + 2) as u32) << 16
+                    | (self.read_byte(address + 1) as u32) << 8
+                    | (self.read_byte(address) as u32)
             }
             Endianness::BigEndian => {
-                (self.read_byte(address) as u32) << 24 | (self.read_byte(address + 1) as u32) << 16 | (self.read_byte(address + 2) as u32) << 8 | (self.read_byte(address + 3) as u32)
+                (self.read_byte(address) as u32) << 24
+                    | (self.read_byte(address + 1) as u32) << 16
+                    | (self.read_byte(address + 2) as u32) << 8
+                    | (self.read_byte(address + 3) as u32)
             }
         }
+    }
+
+    pub fn read_word_unaligned_lwl(&self, eff_address: u32) -> (u32, u32) {
+        let mut mask = 0u32;
+        let mut result = 0u32;
+        let vaddr = eff_address % 4;
+        let addr = eff_address - vaddr;
+        match self.endianness {
+            Endianness::BigEndian => {
+                match vaddr {
+                    0 => {
+                        result = (self.read_byte(addr) << 24)
+                            | (self.read_byte(addr + 1) << 16)
+                            | (self.read_byte(addr + 2) << 8)
+                            | (self.read_byte(addr + 3));
+                        mask = 0xFF_FF_FF_FF;
+                    }
+                    1 => {
+                        result = (self.read_byte(addr) << 24)
+                            | (self.read_byte(addr + 1) << 16)
+                            | (self.read_byte(addr + 2) << 8);
+                        mask = 0xFF_FF_FF_00;
+                    }
+                    2 => {
+                        result = (self.read_byte(addr) << 24) | (self.read_byte(addr + 1) << 16);
+                        mask = 0xFF_FF_00_00;
+                    }
+                    3 => {
+                        result = self.read_byte(addr) << 24;
+                        mask = 0xFF_00_00_00;
+                    }
+                    _ => unreachable!(),
+                };
+            }
+            Endianness::LittleEndian => {
+                match vaddr {
+                    3 => {
+                        result = (self.read_byte(addr) << 24)
+                            | (self.read_byte(addr + 1) << 16)
+                            | (self.read_byte(addr + 2) << 8)
+                            | (self.read_byte(addr + 3));
+                        mask = 0xFF_FF_FF_FF;
+                    }
+                    2 => {
+                        result = (self.read_byte(addr) << 24)
+                            | (self.read_byte(addr + 1) << 16)
+                            | (self.read_byte(addr + 2) << 8);
+                        mask = 0xFF_FF_FF_00;
+                    }
+                    1 => {
+                        result = (self.read_byte(addr) << 24) | (self.read_byte(addr + 1) << 16);
+                        mask = 0xFF_FF_00_00;
+                    }
+                    0 => {
+                        result = self.read_byte(addr) << 24;
+                        mask = 0xFF_00_00_00;
+                    }
+                    _ => unreachable!(),
+                };
+            }
+        };
+        (result, mask)
     }
 
     pub fn fetch_instruction(&self, address: u32) -> u32 {
@@ -92,115 +159,111 @@ impl Memory {
     }
 
     /// SWL instruction support
-    pub fn write_word_unaligned_swl(&mut self, address: u32, value: u32) {
-        let vaddr = address % 4;
+    pub fn write_word_unaligned_swl(&mut self, eff_address: u32, value: u32) {
+        let vaddr = eff_address % 4;
+        let addr = eff_address - vaddr;
         // Spagetti code, but understandable
         match self.endianness {
-            Endianness::BigEndian => {
-                match vaddr {
-                    0 => {
-                        self.write_byte(address + 3, value >> 0);
-                        self.write_byte(address + 2, value >> 8);
-                        self.write_byte(address + 1, value >> 16);
-                        self.write_byte(address + 0, value >> 24);
-                    },
-                    1 => {
-                        self.write_byte(address + 3, value >> 8);
-                        self.write_byte(address + 2, value >> 16);
-                        self.write_byte(address + 1, value >> 24);
-                    },
-                    2 => {
-                        self.write_byte(address + 3, value >> 16);
-                        self.write_byte(address + 2, value >> 24);
-                    }
-                    3 => {
-                        self.write_byte(address + 3, value >> 24);
-                    }
-                    _ => unreachable!()
+            Endianness::BigEndian => match vaddr {
+                0 => {
+                    self.write_byte(addr + 3, value >> 0);
+                    self.write_byte(addr + 2, value >> 8);
+                    self.write_byte(addr + 1, value >> 16);
+                    self.write_byte(addr + 0, value >> 24);
                 }
-            }
-            Endianness::LittleEndian => {
-                match vaddr {
-                    0 => {
-                        self.write_byte(address + 3, value >> 24);
-                    }
-                    1 => {
-                        self.write_byte(address + 3, value >> 16);
-                        self.write_byte(address + 2, value >> 24);
-                    }
-                    2 => {
-                        self.write_byte(address + 3, value >> 8);
-                        self.write_byte(address + 2, value >> 16);
-                        self.write_byte(address + 1, value >> 24);
-                    },
-                    3 => {
-                        self.write_byte(address + 3, value >> 0);
-                        self.write_byte(address + 2, value >> 8);
-                        self.write_byte(address + 1, value >> 16);
-                        self.write_byte(address + 0, value >> 24);
-                    },
-                    _ => unreachable!()
+                1 => {
+                    self.write_byte(addr + 3, value >> 8);
+                    self.write_byte(addr + 2, value >> 16);
+                    self.write_byte(addr + 1, value >> 24);
                 }
-            }
+                2 => {
+                    self.write_byte(addr + 3, value >> 16);
+                    self.write_byte(addr + 2, value >> 24);
+                }
+                3 => {
+                    self.write_byte(addr + 3, value >> 24);
+                }
+                _ => unreachable!(),
+            },
+            Endianness::LittleEndian => match vaddr {
+                0 => {
+                    self.write_byte(addr + 3, value >> 24);
+                }
+                1 => {
+                    self.write_byte(addr + 3, value >> 16);
+                    self.write_byte(addr + 2, value >> 24);
+                }
+                2 => {
+                    self.write_byte(addr + 3, value >> 8);
+                    self.write_byte(addr + 2, value >> 16);
+                    self.write_byte(addr + 1, value >> 24);
+                }
+                3 => {
+                    self.write_byte(addr + 3, value >> 0);
+                    self.write_byte(addr + 2, value >> 8);
+                    self.write_byte(addr + 1, value >> 16);
+                    self.write_byte(addr + 0, value >> 24);
+                }
+                _ => unreachable!(),
+            },
         }
     }
 
     /// SWR instruction support
-    pub fn write_word_unaligned_swr(&mut self, address: u32, value: u32) {
-        let vaddr = address % 4;
+    pub fn write_word_unaligned_swr(&mut self, eff_address: u32, value: u32) {
+        let vaddr = eff_address % 4;
+        let address = eff_address - vaddr;
         // spagetti again, yay
         match self.endianness {
-            Endianness::BigEndian => {
-                match vaddr {
-                    0 => {
-                        self.write_byte(address + 0, value >> 0);
-                    }
-                    1 => {
-                        self.write_byte(address + 0, value >> 8);
-                        self.write_byte(address + 1, value >> 0);
-                    }
-                    2 => {
-                        self.write_byte(address + 0, value >> 16);
-                        self.write_byte(address + 1, value >> 8);
-                        self.write_byte(address + 2, value >> 0);
-                    },
-                    3 => {
-                        self.write_byte(address + 0, value >> 24);
-                        self.write_byte(address + 1, value >> 16);
-                        self.write_byte(address + 2, value >> 8);
-                        self.write_byte(address + 3, value >> 0);
-                    },
-                    _ => unreachable!()
+            Endianness::BigEndian => match vaddr {
+                0 => {
+                    self.write_byte(address + 0, value >> 0);
                 }
-            }
-            Endianness::LittleEndian => {
-                match vaddr {
-                    0 => {
-                        self.write_byte(address + 0, value >> 24);
-                        self.write_byte(address + 1, value >> 16);
-                        self.write_byte(address + 2, value >> 8);
-                        self.write_byte(address + 3, value >> 0);
-                    },
-                    1 => {
-                        self.write_byte(address + 0, value >> 16);
-                        self.write_byte(address + 1, value >> 8);
-                        self.write_byte(address + 2, value >> 0);
-                    },
-                    2 => {
-                        self.write_byte(address + 0, value >> 8);
-                        self.write_byte(address + 1, value >> 0);
-                    }
-                    3 => {
-                        self.write_byte(address + 0, value >> 0);
-                    }
-                    _ => unreachable!()
+                1 => {
+                    self.write_byte(address + 0, value >> 8);
+                    self.write_byte(address + 1, value >> 0);
                 }
-            }
+                2 => {
+                    self.write_byte(address + 0, value >> 16);
+                    self.write_byte(address + 1, value >> 8);
+                    self.write_byte(address + 2, value >> 0);
+                }
+                3 => {
+                    self.write_byte(address + 0, value >> 24);
+                    self.write_byte(address + 1, value >> 16);
+                    self.write_byte(address + 2, value >> 8);
+                    self.write_byte(address + 3, value >> 0);
+                }
+                _ => unreachable!(),
+            },
+            Endianness::LittleEndian => match vaddr {
+                0 => {
+                    self.write_byte(address + 0, value >> 24);
+                    self.write_byte(address + 1, value >> 16);
+                    self.write_byte(address + 2, value >> 8);
+                    self.write_byte(address + 3, value >> 0);
+                }
+                1 => {
+                    self.write_byte(address + 0, value >> 16);
+                    self.write_byte(address + 1, value >> 8);
+                    self.write_byte(address + 2, value >> 0);
+                }
+                2 => {
+                    self.write_byte(address + 0, value >> 8);
+                    self.write_byte(address + 1, value >> 0);
+                }
+                3 => {
+                    self.write_byte(address + 0, value >> 0);
+                }
+                _ => unreachable!(),
+            },
         }
     }
 
     pub fn write_block_and_update_program_break(&mut self, address: u32, data: &[u8]) {
-        if data.len() == 0 { return; }
+        if data.len() == 0 {
+            return;
+        }
 
         // FIXME Coredumps contain stack, but we want program break address to be lower than that
         // so we just expect the program break to be lower than 0x70000000
@@ -212,9 +275,12 @@ impl Memory {
     }
 
     pub fn write_block(&mut self, address: u32, data: &[u8]) {
-        if data.len() == 0 { return; }
+        if data.len() == 0 {
+            return;
+        }
 
-        let data_slice = &mut (self.data.as_mut_slice()[address as usize..(address as usize + data.len())]);
+        let data_slice =
+            &mut (self.data.as_mut_slice()[address as usize..(address as usize + data.len())]);
         data_slice.copy_from_slice(data);
     }
 
@@ -238,11 +304,17 @@ impl Memory {
         self.program_break = new_value;
     }
 
-    pub fn initialize_stack_at(&mut self, address: u32, environment_variables: Vec<(String, String)>, arguments: Vec<String>) {
+    pub fn initialize_stack_at(
+        &mut self,
+        address: u32,
+        environment_variables: Vec<(String, String)>,
+        arguments: Vec<String>,
+    ) {
         assert_eq!(address % 8, 0);
         debug!("Generating new stack:");
         let mut pointer_address = address + 4;
-        let mut data_address = pointer_address + (1 + arguments.len() as u32 + 1 + environment_variables.len() as u32 + 1 + 40) * 4;
+        let mut data_address = pointer_address
+            + (1 + arguments.len() as u32 + 1 + environment_variables.len() as u32 + 1 + 40) * 4;
 
         debug!("\tArguments: {}", arguments.len());
         self.write_word(address, arguments.len() as u32);
@@ -308,7 +380,6 @@ impl Memory {
         /* Pointer to the global system page used for system calls and other nice things.  */
         #define AT_SYSINFO      32
         #define AT_SYSINFO_EHDR 33  */
-
 
         let mut write_vector = |key: u32, val: u32| {
             self.write_word(pointer_address, key);

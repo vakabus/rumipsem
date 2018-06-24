@@ -466,7 +466,14 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
             itrace!("lw\t{},0x{:x} - data=0x{:08x}", get_register_name(rt), addr, r);
             registers.write_register(rt, r);
         }
-
+        // LWL
+        0b100010 => {
+            let addr = add_signed_offset(registers.read_register(rs), get_offset(instruction));
+            let (r, mask) = memory.read_word_unaligned_lwl(addr);
+            itrace!("lwl\t{},0x{:x} - data=0x{:08x} (the data will be overlayed by previous register content)", get_register_name(rt), addr, r);
+            let pv = registers.read_register(rt);
+            registers.write_register(rt, (pv & !mask) | r);
+        }
         // LL
         0b110000 => {
             let addr = add_signed_offset(registers.read_register(rs), get_offset(instruction));

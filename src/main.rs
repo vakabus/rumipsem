@@ -101,14 +101,3 @@ pub fn run_binary(path: String, arguments: Vec<String>, flags: CPUFlags) {
     );
     info!("Program terminated gracefully");
 }
-
-//#[test]
-fn test_busybox_noarg_coredump() {
-    run_coredump(
-        "mips_binaries/core_busybox-mips_noarg/coredump".to_string(),
-        0x4001b0,
-        0x7ffffe50,
-        Some("mips_binaries/core_busybox-mips_noarg/trace.gz".to_string()),
-        CPUFlags::default(),
-    );
-}

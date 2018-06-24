@@ -10,6 +10,7 @@ use memory::Memory;
 use num_traits::cast::ToPrimitive;
 use std::ffi::CString;
 use std::io::Error;
+use std::time::SystemTime;
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, Eq, PartialEq)]
@@ -845,6 +846,10 @@ where
                 itrace!("SET_TID_ADDRESS (ignored)");
                 Ok(0)
             }
+            SyscallO32::NRRt_sigprocmask => {
+                itrace!("RT_SIGPROCMASK (ignored)");
+                Ok(0)
+            }
             SyscallO32::NRGetuid => {
                 if flags.fake_root {
                     itrace!("GETUID (faked)");
@@ -928,7 +933,7 @@ where
                 check_error(unsafe { ::libc::dup2(arg1 as i32, arg2 as i32) })
             }
             SyscallO32::NRWrite => {
-                itrace!("WRITE");
+                itrace!("WRITE fd={} ptr=0x{:x} len={}", arg1, arg2, arg3);
 
                 check_error(unsafe {
                     ::libc::write(
@@ -1082,6 +1087,7 @@ where
                 let buf_size = arg2;
 
                 if flags.fake_root_directory && buf_size >= 6 {
+                    itrace!("GETCWD (faked) ptr=0x{:x}", buf_addr);
                     memory.write_byte(buf_addr + 0, '/' as u32);
                     memory.write_byte(buf_addr + 1, 'r' as u32);
                     memory.write_byte(buf_addr + 2, 'o' as u32);
@@ -1100,13 +1106,35 @@ where
                         )
                     };
 
-                    itrace!("GETCWD cwd={:?} res={:x}", cwd, res);
+                    itrace!("GETCWD result_cwd={:?} real_ptr=0x{:x} emu_ptr=0x{:x}", cwd, res, buf_addr);
                     if res == 0 {
-                        check_error(res)
+                        check_error(-1i32)
                     } else {
                         Ok(buf_addr)
                     }
                 }
+            }
+            SyscallO32::NRTime => {
+                itrace!("TIME tloc_ptr={}", arg1);
+                let tloc_ptr = arg1;
+                let seconds = match SystemTime::now().duration_since(::std::time::UNIX_EPOCH) {
+                    Ok(duration) => duration.as_secs(),
+                    Err(_) => panic!("Weird time! UNIX epoch is in the future?")
+                };
+
+                if tloc_ptr != 0 {
+                    memory.write_word(tloc_ptr, seconds as u32);
+                }
+
+                Ok(seconds as u32)
+            }
+            SyscallO32::NRSetgid => {
+                itrace!("SETGID gid={}", arg1);
+                check_error(unsafe { ::libc::setgid(arg1 as ::libc::gid_t)})
+            }
+            SyscallO32::NRSetuid => {
+                itrace!("SETUID uid={}", arg1);
+                check_error(unsafe { ::libc::setuid(arg1 as ::libc::uid_t)})
             }
             _ => {
                 error!(
@@ -1122,6 +1150,7 @@ where
 
         match result {
             Ok(res) => {
+                debug!("Syscall result - SUCCESS - return_value=0x{:x}", res);
                 registers.write_register(V0, res as u32);
                 registers.write_register(A3, 0); // no error
             }
