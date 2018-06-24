@@ -63,8 +63,8 @@ impl Memory {
     }
 
     pub fn read_word_unaligned_lwl(&self, eff_address: u32) -> (u32, u32) {
-        let mut mask = 0u32;
-        let mut result = 0u32;
+        let mask: u32;
+        let result: u32;
         let vaddr = eff_address % 4;
         let addr = eff_address - vaddr;
         match self.endianness {
