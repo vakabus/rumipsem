@@ -1,12 +1,11 @@
+use syscalls::SystemStatus;
 use cpu::registers::RegisterFile;
 use cpu::registers::get_register_name;
 use memory::Memory;
-use syscalls::eval_syscall;
 use cpu::bitutils::*;
 use cpu::event::*;
-use cpu::control::*;
 
-pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, memory: &mut Memory, cpu_config: &CPUConfig) -> CPUEvent
+pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, memory: &mut Memory, system: &mut SystemStatus) -> CPUEvent
     where T: Fn(u32, u32) {
     let mut result_cpu_event = CPUEvent::Nothing;
 
@@ -291,7 +290,7 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
                 }
                 // SYSCALL
                 0b001100 => {
-                    result_cpu_event = eval_syscall(instruction, registers, memory, &cpu_config.flags);
+                    result_cpu_event = system.eval_syscall(instruction, registers, memory);
                 }
                 // SYNC
                 0b001111 => {

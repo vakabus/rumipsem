@@ -2,6 +2,7 @@ use cpu::event::CPUEvent;
 use cpu::instructions::eval_instruction;
 use cpu::registers::RegisterFile;
 use cpu::watchdog::Watchdog;
+use syscalls::SystemStatus;
 use memory::Memory;
 use std::cell::*;
 use std::collections::VecDeque;
@@ -25,6 +26,7 @@ pub struct CPUFlags {
     pub panic_on_invalid_read: bool,
     pub block_ioctl_on_stdio: bool,
     pub ioctl_fail_always: bool,
+    pub syscalls_bypass: bool,
 }
 
 impl CPUFlags {
@@ -37,6 +39,7 @@ impl CPUFlags {
             panic_on_invalid_read: false,
             block_ioctl_on_stdio: false,
             ioctl_fail_always: false,
+            syscalls_bypass: false,
         }
     }
 }
@@ -57,6 +60,8 @@ pub fn run_cpu(mut memory: Memory, cpu_config: CPUConfig) {
 
     register_file.set_pc(cpu_config.entry_point);
 
+    let mut system = SystemStatus::new(&cpu_config.flags);
+
     let mut debug_mode = false;
 
     loop {
@@ -68,7 +73,7 @@ pub fn run_cpu(mut memory: Memory, cpu_config: CPUConfig) {
             .run_cpu_watchdogs(&mut register_file, &memory);
 
         let instruction = memory.fetch_instruction(pc);
-        let exit = eval_instruction(instruction, &mut register_file, &mut memory, &cpu_config);
+        let exit = eval_instruction(instruction, &mut register_file, &mut memory, &mut system);
         match exit {
             CPUEvent::Exit => break,
             CPUEvent::AtomicLoadModifyWriteBegan => watchdog_status
