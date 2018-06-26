@@ -964,6 +964,8 @@ impl<'a> SystemStatus<'a> {
                 SyscallO32::NROpen => {
                     let mut flags = arg2 as i32;
 
+                    // this here drops flag FASYNC. On MIPS, it means LARGEFILES
+                    // and therefore is meaningless on 64bit systems
                     if flags & 0x2000 == 0x2000 {
                         flags ^= 0x2000;
                     }
