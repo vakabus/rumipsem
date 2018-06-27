@@ -284,10 +284,6 @@ impl Memory {
         data_slice.copy_from_slice(data);
     }
 
-    pub fn get_slice(&self, start: usize, end: usize) -> &[u8] {
-        &self.data.as_slice()[start..end]
-    }
-
     pub fn translate_address(&self, address: u32) -> *const u8 {
         self.data[address as usize..].as_ptr()
     }
