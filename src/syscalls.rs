@@ -8,7 +8,7 @@ use cpu::registers::STACK_POINTER;
 /// https://github.com/torvalds/linux/blob/master/arch/mips/include/uapi/asm/unistd.h
 use memory::Memory;
 use num_traits::cast::ToPrimitive;
-use std::ffi::CString;
+use std::ffi::CStr;
 use std::io::Error;
 use std::time::SystemTime;
 
@@ -924,7 +924,7 @@ impl<'a> SystemStatus<'a> {
 
                     let (file, res) = unsafe {
                         (
-                            CString::from_raw(memory.translate_address_mut(arg1) as *mut i8),
+                            CStr::from_ptr(memory.translate_address_mut(arg1) as *mut i8),
                             ::libc::stat(
                                 memory.translate_address(arg1) as *mut i8,
                                 memory.translate_address_mut(arg2) as *mut ::libc::stat,
@@ -972,7 +972,7 @@ impl<'a> SystemStatus<'a> {
 
                     let (file, res) = unsafe {
                         (
-                            CString::from_raw(memory.translate_address_mut(arg1) as *mut i8),
+                            CStr::from_ptr(memory.translate_address_mut(arg1) as *mut i8),
                             ::libc::open(memory.translate_address(arg1) as *const i8, flags, arg3),
                         )
                     };
@@ -1139,7 +1139,7 @@ impl<'a> SystemStatus<'a> {
                                     memory.translate_address_mut(buf_addr) as *mut ::libc::c_char,
                                     buf_size as usize,
                                 ) as usize,
-                                CString::from_raw(memory.translate_address_mut(buf_addr) as *mut i8),
+                                CStr::from_ptr(memory.translate_address_mut(buf_addr) as *mut i8),
                             )
                         };
 
