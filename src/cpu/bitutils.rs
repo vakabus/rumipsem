@@ -46,11 +46,22 @@ fn test_apply_offset() {
     assert_eq!(add_signed_offset(65535, 10), 65545);
     assert_eq!(add_signed_offset(65535, 65535), 65534);
     assert_eq!(add_signed_offset(0xFF_FF_FF_00, 0xFF), 0xFF_FF_FF_FF);
-    assert_eq!(add_signed_offset(0xFF_FF_FF_FF, 0x80_00), 0xFF_FF_FF_FF - (65535 / 2) - 1);
+    assert_eq!(
+        add_signed_offset(0xFF_FF_FF_FF, 0x80_00),
+        0xFF_FF_FF_FF - (65535 / 2) - 1
+    );
 }
 
 #[test]
 fn test_sign_extend() {
     assert_eq!(sign_extend(0xFF, 8), -1);
     assert_eq!(sign_extend(0x00_FF_FF_FF, 24), -1);
+}
+
+#[test]
+fn test_add_to_upper_bits() {
+    assert_eq!(add_to_upper_bits(0x0000_0000, 0x7F_FF), 0x7F_FF_00_00);
+    assert_eq!(add_to_upper_bits(0x0001_0001, 0x0001), 0x0002_0001);
+    assert_eq!(add_to_upper_bits(0x7FFF_0001, 0x0000), 0x7FFF_0001);
+    assert_eq!(add_to_upper_bits(0x7FFF_0001, 0xFFFF), 0x7FFE_0001);
 }

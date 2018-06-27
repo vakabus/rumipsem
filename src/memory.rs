@@ -54,74 +54,11 @@ impl Memory {
                     | (self.read_byte(address) as u32)
             }
             Endianness::BigEndian => {
-                (self.read_byte(address) as u32) << 24
-                    | (self.read_byte(address + 1) as u32) << 16
+                (self.read_byte(address) as u32) << 24 | (self.read_byte(address + 1) as u32) << 16
                     | (self.read_byte(address + 2) as u32) << 8
                     | (self.read_byte(address + 3) as u32)
             }
         }
-    }
-
-    pub fn read_word_unaligned_lwl(&self, eff_address: u32) -> (u32, u32) {
-        let mask: u32;
-        let result: u32;
-        let vaddr = eff_address % 4;
-        let addr = eff_address - vaddr;
-        match self.endianness {
-            Endianness::BigEndian => {
-                match vaddr {
-                    0 => {
-                        result = (self.read_byte(addr) << 24)
-                            | (self.read_byte(addr + 1) << 16)
-                            | (self.read_byte(addr + 2) << 8)
-                            | (self.read_byte(addr + 3));
-                        mask = 0xFF_FF_FF_FF;
-                    }
-                    1 => {
-                        result = (self.read_byte(addr) << 24)
-                            | (self.read_byte(addr + 1) << 16)
-                            | (self.read_byte(addr + 2) << 8);
-                        mask = 0xFF_FF_FF_00;
-                    }
-                    2 => {
-                        result = (self.read_byte(addr) << 24) | (self.read_byte(addr + 1) << 16);
-                        mask = 0xFF_FF_00_00;
-                    }
-                    3 => {
-                        result = self.read_byte(addr) << 24;
-                        mask = 0xFF_00_00_00;
-                    }
-                    _ => unreachable!(),
-                };
-            }
-            Endianness::LittleEndian => {
-                match vaddr {
-                    3 => {
-                        result = (self.read_byte(addr) << 24)
-                            | (self.read_byte(addr + 1) << 16)
-                            | (self.read_byte(addr + 2) << 8)
-                            | (self.read_byte(addr + 3));
-                        mask = 0xFF_FF_FF_FF;
-                    }
-                    2 => {
-                        result = (self.read_byte(addr) << 24)
-                            | (self.read_byte(addr + 1) << 16)
-                            | (self.read_byte(addr + 2) << 8);
-                        mask = 0xFF_FF_FF_00;
-                    }
-                    1 => {
-                        result = (self.read_byte(addr) << 24) | (self.read_byte(addr + 1) << 16);
-                        mask = 0xFF_FF_00_00;
-                    }
-                    0 => {
-                        result = self.read_byte(addr) << 24;
-                        mask = 0xFF_00_00_00;
-                    }
-                    _ => unreachable!(),
-                };
-            }
-        };
-        (result, mask)
     }
 
     pub fn fetch_instruction(&self, address: u32) -> u32 {

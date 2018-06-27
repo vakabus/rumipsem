@@ -797,12 +797,13 @@ fn check_error<T: Default + Ord + ToPrimitive>(num: T) -> Result<u32, Error> {
     }
 }
 
-pub fn eval_syscall<T: Fn(u32, u32)>(
+pub fn eval_syscall<T, S>(
     _inst: u32,
-    registers: &mut RegisterFile<T>,
+    registers: &mut RegisterFile<T, S>,
     memory: &mut Memory,
     flags: &CPUFlags,
-) -> CPUEvent {
+) -> CPUEvent
+where T: Fn(u32,u32), S: Fn(u32,u32) {
     macro_rules! itrace {
         ($fmt:expr, $($arg:tt)*) => (
             info!(concat!("0x{:x}:\tsyscall\t", $fmt), registers.get_pc(), $($arg)*);
@@ -890,10 +891,8 @@ pub fn eval_syscall<T: Fn(u32, u32)>(
             }
             SyscallO32::NRGetpid => {
                 itrace!("GETPID");
-                Ok(1523)
-                /*
-                    check_error(unsafe { ::libc::getpid() })
-                    */
+                
+                check_error(unsafe { ::libc::getpid() })
             }
             SyscallO32::NRStat64 => {
                 //panic!("This syscall was disabled!");

@@ -1,13 +1,21 @@
-use syscalls::eval_syscall;
-use cpu::registers::RegisterFile;
-use cpu::registers::get_register_name;
-use memory::Memory;
 use cpu::bitutils::*;
-use cpu::event::*;
 use cpu::control::*;
+use cpu::event::*;
+use cpu::registers::get_register_name;
+use cpu::registers::RegisterFile;
+use memory::Memory;
+use syscalls::eval_syscall;
 
-pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, memory: &mut Memory, flags: &CPUFlags) -> CPUEvent
-    where T: Fn(u32, u32) {
+pub fn eval_instruction<T,S>(
+    instruction: u32,
+    registers: &mut RegisterFile<T, S>,
+    memory: &mut Memory,
+    flags: &CPUFlags,
+) -> CPUEvent
+where
+    T: Fn(u32, u32),
+    S: Fn(u32, u32),
+{
     let mut result_cpu_event = CPUEvent::Nothing;
 
     macro_rules! itrace {
@@ -38,43 +46,75 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
                         itrace!("nop\t");
                     } else {
                         assert_eq!(rs, 0);
-                        itrace!("sll\t{},{},{}", get_register_name(rd), get_register_name(rt), get_shift(instruction));
+                        itrace!(
+                            "sll\t{},{},{}",
+                            get_register_name(rd),
+                            get_register_name(rt),
+                            get_shift(instruction)
+                        );
                         let r = registers.read_register(rt) << get_shift(instruction);
                         registers.write_register(rd, r);
                     }
                 }
                 // SLLV
                 0b000100 => {
-                    itrace!("sllv\t{},{},{}", get_register_name(rd), get_register_name(rt), get_register_name(rs));
+                    itrace!(
+                        "sllv\t{},{},{}",
+                        get_register_name(rd),
+                        get_register_name(rt),
+                        get_register_name(rs)
+                    );
                     let r = registers.read_register(rt) << (registers.read_register(rs) & 0x1F);
                     registers.write_register(rd, r);
                 }
                 // SRLV
                 0b000110 => {
-                    itrace!("srlv\t{},{},{}", get_register_name(rd), get_register_name(rt), get_register_name(rs));
+                    itrace!(
+                        "srlv\t{},{},{}",
+                        get_register_name(rd),
+                        get_register_name(rt),
+                        get_register_name(rs)
+                    );
                     let r = registers.read_register(rt) >> (registers.read_register(rs) & 0x1F);
                     registers.write_register(rd, r);
                 }
                 // rotation right / shift right logical
-                0b000010 => {
-                    match rs {
-                        1 => {
-                            itrace!("rotr\t{},{},{}", get_register_name(rd), get_register_name(rt), get_shift(instruction));
-                            let r = registers.read_register(rt).rotate_right(get_shift(instruction));
-                            registers.write_register(rd, r);
-                        }
-                        0 => {
-                            itrace!("srl\t{},{},{}", get_register_name(rd), get_register_name(rt), get_shift(instruction));
-                            let r = registers.read_register(rt) >> get_shift(instruction);
-                            registers.write_register(rd, r);
-                        }
-                        _ => panic!("unknown right bitshift variant")
+                0b000010 => match rs {
+                    1 => {
+                        itrace!(
+                            "rotr\t{},{},{}",
+                            get_register_name(rd),
+                            get_register_name(rt),
+                            get_shift(instruction)
+                        );
+                        let r = registers
+                            .read_register(rt)
+                            .rotate_right(get_shift(instruction));
+                        registers.write_register(rd, r);
                     }
-                }
+                    0 => {
+                        itrace!(
+                            "srl\t{},{},{}",
+                            get_register_name(rd),
+                            get_register_name(rt),
+                            get_shift(instruction)
+                        );
+                        let r = registers.read_register(rt) >> get_shift(instruction);
+                        registers.write_register(rd, r);
+                    }
+                    _ => panic!("unknown right bitshift variant"),
+                },
                 // ADD
                 0b100000 => {
-                    itrace!("add\t{},{},{}", get_register_name(rd), get_register_name(rs), get_register_name(rt));
-                    let (r, overflow) = registers.read_register(rs).overflowing_add(registers.read_register(rt));
+                    itrace!(
+                        "add\t{},{},{}",
+                        get_register_name(rd),
+                        get_register_name(rs),
+                        get_register_name(rt)
+                    );
+                    let (r, overflow) = registers
+                        .read_register(rs)
+                        .overflowing_add(registers.read_register(rt));
                     if overflow {
                         panic!("Overflow occured during addition. Should TRAP. Please FIX");
                     }
@@ -82,33 +122,63 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
                 }
                 // ADDU
                 0b100001 => {
-                    itrace!("addu\t{},{},{}", get_register_name(rd), get_register_name(rs), get_register_name(rt));
-                    let (r, _) = registers.read_register(rs).overflowing_add(registers.read_register(rt));
+                    itrace!(
+                        "addu\t{},{},{}",
+                        get_register_name(rd),
+                        get_register_name(rs),
+                        get_register_name(rt)
+                    );
+                    let (r, _) = registers
+                        .read_register(rs)
+                        .overflowing_add(registers.read_register(rt));
                     registers.write_register(rd, r);
                 }
                 // SUBU
                 0b100011 => {
-                    let (r, _) = registers.read_register(rs).overflowing_sub(registers.read_register(rt));
-                    itrace!("subu\t{},{},{}", get_register_name(rd), get_register_name(rs), get_register_name(rt));
+                    let (r, _) = registers
+                        .read_register(rs)
+                        .overflowing_sub(registers.read_register(rt));
+                    itrace!(
+                        "subu\t{},{},{}",
+                        get_register_name(rd),
+                        get_register_name(rs),
+                        get_register_name(rt)
+                    );
                     registers.write_register(rd, r);
                 }
                 // OR
                 0b100101 => {
                     let r = registers.read_register(rs) | registers.read_register(rt);
-                    itrace!("or\t{},{},{} - res=0x{:08x}", get_register_name(rd), get_register_name(rs), get_register_name(rt), r);
+                    itrace!(
+                        "or\t{},{},{} - res=0x{:08x}",
+                        get_register_name(rd),
+                        get_register_name(rs),
+                        get_register_name(rt),
+                        r
+                    );
                     registers.write_register(rd, r);
                 }
                 // NOR
                 0b100111 => {
                     let r = !(registers.read_register(rs) | registers.read_register(rt));
-                    itrace!("nor\t{},{},{}", get_register_name(rd), get_register_name(rs), get_register_name(rt));
+                    itrace!(
+                        "nor\t{},{},{}",
+                        get_register_name(rd),
+                        get_register_name(rs),
+                        get_register_name(rt)
+                    );
                     registers.write_register(rd, r);
                 }
                 // SRA
                 0b000011 => {
                     assert_eq!(rs, 0);
 
-                    itrace!("sra\t{},{},{}", get_register_name(rd), get_register_name(rt), get_shift(instruction));
+                    itrace!(
+                        "sra\t{},{},{}",
+                        get_register_name(rd),
+                        get_register_name(rt),
+                        get_shift(instruction)
+                    );
                     let r = ((registers.read_register(rt) as i32) >> get_shift(instruction)) as u32;
                     registers.write_register(rd, r);
                 }
@@ -116,25 +186,46 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
                 0b000111 => {
                     assert_eq!(get_shift(instruction), 0);
 
-                    itrace!("srav\t{},{},{}", get_register_name(rd), get_register_name(rt), get_register_name(rs));
-                    let r = ((registers.read_register(rt) as i32) >> (registers.read_register(rs) & 0x1F)) as u32;
+                    itrace!(
+                        "srav\t{},{},{}",
+                        get_register_name(rd),
+                        get_register_name(rt),
+                        get_register_name(rs)
+                    );
+                    let r = ((registers.read_register(rt) as i32)
+                        >> (registers.read_register(rs) & 0x1F)) as u32;
                     registers.write_register(rd, r);
                 }
                 // AND
                 0b100100 => {
                     let r = registers.read_register(rs) & registers.read_register(rt);
-                    itrace!("and\t{},{},{}", get_register_name(rd), get_register_name(rs), get_register_name(rt));
+                    itrace!(
+                        "and\t{},{},{}",
+                        get_register_name(rd),
+                        get_register_name(rs),
+                        get_register_name(rt)
+                    );
                     registers.write_register(rd, r);
                 }
                 // XOR
                 0b100110 => {
                     let r = registers.read_register(rs) ^ registers.read_register(rt);
-                    itrace!("xor\t{},{},{}", get_register_name(rd), get_register_name(rs), get_register_name(rt));
+                    itrace!(
+                        "xor\t{},{},{}",
+                        get_register_name(rd),
+                        get_register_name(rs),
+                        get_register_name(rt)
+                    );
                     registers.write_register(rd, r);
                 }
                 //JALR
                 0b001001 => {
-                    itrace!("jalr\t{},{} - target=0x{:08x}", get_register_name(rd), get_register_name(rs), registers.read_register(rs));
+                    itrace!(
+                        "jalr\t{},{} - target=0x{:08x}",
+                        get_register_name(rd),
+                        get_register_name(rs),
+                        registers.read_register(rs)
+                    );
                     let pc = registers.get_pc();
                     registers.write_register(rd, pc + 8);
                     let r = registers.read_register(rs);
@@ -149,8 +240,14 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
                 }
                 // SLT
                 0b101010 => {
-                    itrace!("slt\t{},{},{}", get_register_name(rd), get_register_name(rs), get_register_name(rt));
-                    let r = (registers.read_register(rs) as i32) < (registers.read_register(rt) as i32);
+                    itrace!(
+                        "slt\t{},{},{}",
+                        get_register_name(rd),
+                        get_register_name(rs),
+                        get_register_name(rt)
+                    );
+                    let r =
+                        (registers.read_register(rs) as i32) < (registers.read_register(rt) as i32);
                     registers.write_register(rd, r as u32);
                 }
                 // SLTU
@@ -166,7 +263,13 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
                         let r = registers.read_register(rs);
                         registers.write_register(rd, r);
                     }
-                    itrace!("movn\t{},{},{} - value_written={}", get_register_name(rd), get_register_name(rs), get_register_name(rt), registers.read_register(rt) != 0);
+                    itrace!(
+                        "movn\t{},{},{} - value_written={}",
+                        get_register_name(rd),
+                        get_register_name(rs),
+                        get_register_name(rt),
+                        registers.read_register(rt) != 0
+                    );
                 }
                 // MOVZ
                 0b001010 => {
@@ -175,7 +278,13 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
                         let r = registers.read_register(rs);
                         registers.write_register(rd, r);
                     }
-                    itrace!("movz\t{},{},{} - value_written={}", get_register_name(rd), get_register_name(rs), get_register_name(rt), registers.read_register(rt) != 0);
+                    itrace!(
+                        "movz\t{},{},{} - value_written={}",
+                        get_register_name(rd),
+                        get_register_name(rs),
+                        get_register_name(rt),
+                        registers.read_register(rt) != 0
+                    );
                 }
                 // SOP30
                 0b011000 => {
@@ -187,7 +296,12 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
                             let r = v1 * v2;
                             let r = (r as u64) as u32;
                             registers.write_register(rd, r);
-                            itrace!("mul\t{},{},{}", get_register_name(rd), get_register_name(rs), get_register_name(rt));
+                            itrace!(
+                                "mul\t{},{},{}",
+                                get_register_name(rd),
+                                get_register_name(rs),
+                                get_register_name(rt)
+                            );
                         }
                         0b00011 => {
                             let v1 = (registers.read_register(rs) as i32) as i64;
@@ -195,7 +309,12 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
                             let r = v1 * v2;
                             let r = ((r as u64) >> 32) as u32;
                             registers.write_register(rd, r);
-                            itrace!("muh\t{},{},{}", get_register_name(rd), get_register_name(rs), get_register_name(rt));
+                            itrace!(
+                                "muh\t{},{},{}",
+                                get_register_name(rd),
+                                get_register_name(rs),
+                                get_register_name(rt)
+                            );
                         }
                         0 => {
                             assert_eq!(rd, 0);
@@ -232,8 +351,10 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
                             assert_eq!(rd, 0);
                             // warn!("Deprecated DIV instruction. Removed in release 6 of MIPS32");
                             itrace!("divu\t{},{}", get_register_name(rs), get_register_name(rt));
-                            let l = (registers.read_register(rs) as i32) / (registers.read_register(rt) as i32);
-                            let h = (registers.read_register(rs) as i32) % (registers.read_register(rt) as i32);
+                            let l = (registers.read_register(rs) as i32)
+                                / (registers.read_register(rt) as i32);
+                            let h = (registers.read_register(rs) as i32)
+                                % (registers.read_register(rt) as i32);
                             registers.write_lo(l as u32);
                             registers.write_hi(h as u32);
                         }
@@ -265,7 +386,8 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
                 // TEQ
                 0b110100 => {
                     itrace!("teq\t{},{}", get_register_name(rs), get_register_name(rt));
-                    if (registers.read_register(rs) as i32) == (registers.read_register(rt) as i32) {
+                    if (registers.read_register(rs) as i32) == (registers.read_register(rt) as i32)
+                    {
                         error!("TEQ instruction assert did not pass. Trap!");
                         panic!("Error");
                     }
@@ -300,7 +422,9 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
                 // BREAK
                 0b001101 => {
                     itrace!("break");
-                    error!("Breakpoint instruction reached. No idea, how to continue. Terminating!");
+                    error!(
+                        "Breakpoint instruction reached. No idea, how to continue. Terminating!"
+                    );
                     panic!();
                 }
                 _ => {
@@ -312,24 +436,45 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
         // ADDIU
         0b001001 => {
             let r = add_signed_offset(registers.read_register(rs), get_offset(instruction));
-            itrace!("addiu\t{},{},0x{:04x} - res=0x{:x}", get_register_name(rt), get_register_name(rs), get_offset(instruction), r);
+            itrace!(
+                "addiu\t{},{},0x{:04x} - res=0x{:x}",
+                get_register_name(rt),
+                get_register_name(rs),
+                get_offset(instruction),
+                r
+            );
             registers.write_register(rt, r);
         }
         // ANDI
         0b001100 => {
-            itrace!("andi\t{},{},0x{:x}", get_register_name(rt), get_register_name(rs), get_offset(instruction));
+            itrace!(
+                "andi\t{},{},0x{:x}",
+                get_register_name(rt),
+                get_register_name(rs),
+                get_offset(instruction)
+            );
             let r = registers.read_register(rs) & (get_offset(instruction) as u32);
             registers.write_register(rt, r);
         }
         // XORI
         0b001110 => {
-            itrace!("xori\t{},{},0x{:x}", get_register_name(rt), get_register_name(rs), get_offset(instruction));
+            itrace!(
+                "xori\t{},{},0x{:x}",
+                get_register_name(rt),
+                get_register_name(rs),
+                get_offset(instruction)
+            );
             let r = registers.read_register(rs) ^ (get_offset(instruction) as u32);
             registers.write_register(rt, r);
         }
         // ORI
         0b001101 => {
-            itrace!("ori\t{},{},0x{:04x}", get_register_name(rt), get_register_name(rs), get_offset(instruction));
+            itrace!(
+                "ori\t{},{},0x{:04x}",
+                get_register_name(rt),
+                get_register_name(rs),
+                get_offset(instruction)
+            );
             let r = registers.read_register(rs) | (get_offset(instruction) as u32);
             registers.write_register(rt, r);
         }
@@ -338,46 +483,67 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
             let mut lower = false;
             let mut equal = false;
             let mut higher = false;
+            let mut link;
             let mut inst;
             if rs == 0 && rt == 0b10001 {
                 inst = "bal";
                 equal = true;
+                link = true;
             } else if rt == 0b10001 {
                 // if necessary, just remove this panic
                 panic!("BGEZAL was removed in release 6");
-                /*
+            /*
                 inst = "BGEZAL";
                 higher = true;
                 equal = true;
+                link = true;
                 */
             } else if rt == 0b00000 {
                 inst = "bltz";
                 lower = true;
+                link = false;
             } else if rt == 0b000001 {
                 inst = "bgez";
                 higher = true;
                 equal = true;
+                link = false;
             } else {
                 panic!("Unknown weird conditional jump with rt=0b{:05b}", rt);
             }
 
             let val = registers.read_register(rs) as i32;
             let pc = registers.get_pc();
-            let address = (pc as i32 + 4 + sign_extend((get_offset(instruction) as u32) << 2, 18)) as u32;
+            let address =
+                (pc as i32 + 4 + sign_extend((get_offset(instruction) as u32) << 2, 18)) as u32;
             let mut jumped = false;
 
             if (lower && val < 0) || (equal && val == 0) || (higher && val > 0) {
-                registers.write_register(31, pc + 8);
+                if link {
+                    registers.write_register(31, pc + 8);
+                }
                 registers.jump_to(address);
                 jumped = true;
             }
-            itrace!("{}\t{},0x{:x} - val=0x{:x} => {}", inst, get_register_name(rs), address, val, jumped);
+            itrace!(
+                "{}\t{},0x{:x} - val=0x{:x} => {}",
+                inst,
+                get_register_name(rs),
+                address,
+                val,
+                jumped
+            );
         }
         // BEQ
         0b000100 => {
             let target_offset = sign_extend((get_offset(instruction) as u32) << 2, 18);
             let r = (registers.get_pc() as i32 + 4 + target_offset) as u32;
-            itrace!("beq\t{},{},0x{:x} - jumped={}", get_register_name(rs), get_register_name(rt), r, registers.read_register(rs) == registers.read_register(rt));
+            itrace!(
+                "beq\t{},{},0x{:x} - jumped={}",
+                get_register_name(rs),
+                get_register_name(rt),
+                r,
+                registers.read_register(rs) == registers.read_register(rt)
+            );
             if registers.read_register(rs) == registers.read_register(rt) {
                 registers.jump_to(r);
             }
@@ -386,7 +552,13 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
         0b000101 => {
             let target_offset = sign_extend((get_offset(instruction) as u32) << 2, 18);
             let r = (registers.get_pc() as i32 + 4 + target_offset) as u32;
-            itrace!("bne\t{},{},0x{:x} - jumped={}", get_register_name(rs), get_register_name(rt), r, registers.read_register(rs) != registers.read_register(rt));
+            itrace!(
+                "bne\t{},{},0x{:x} - jumped={}",
+                get_register_name(rs),
+                get_register_name(rt),
+                r,
+                registers.read_register(rs) != registers.read_register(rt)
+            );
             if registers.read_register(rs) != registers.read_register(rt) {
                 registers.jump_to(r);
             }
@@ -436,18 +608,29 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
         0b100000 => {
             let addr = add_signed_offset(registers.read_register(rs), get_offset(instruction));
             let r = sign_extend(memory.read_byte(addr), 8);
-            itrace!("lb\t{},0x{:x} - data=0x{:08x}", get_register_name(rt), addr, r);
+            itrace!(
+                "lb\t{},0x{:x} - data=0x{:08x}",
+                get_register_name(rt),
+                addr,
+                r
+            );
             registers.write_register(rt, r as u32);
         }
         //LHU
         0b100101 => {
-            let r = memory.read_halfword(add_signed_offset(registers.read_register(rs), get_offset(instruction)));
+            let r = memory.read_halfword(add_signed_offset(
+                registers.read_register(rs),
+                get_offset(instruction),
+            ));
             itrace!("lhu\tdata={:08x}", r);
             registers.write_register(rt, r);
         }
         //LH
         0b100001 => {
-            let r = memory.read_halfword(add_signed_offset(registers.read_register(rs), get_offset(instruction)));
+            let r = memory.read_halfword(add_signed_offset(
+                registers.read_register(rs),
+                get_offset(instruction),
+            ));
             itrace!("lh\tdata={:08x}", r);
             let r = sign_extend(r, 16) as u32;
             registers.write_register(rt, r);
@@ -456,23 +639,49 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
         0b100100 => {
             let addr = add_signed_offset(registers.read_register(rs), get_offset(instruction));
             let r = memory.read_byte(addr);
-            itrace!("lbu\t{},0x{:x} - data=0x{:08x}", get_register_name(rt), addr, r);
+            itrace!(
+                "lbu\t{},0x{:x} - data=0x{:08x}",
+                get_register_name(rt),
+                addr,
+                r
+            );
             registers.write_register(rt, r);
         }
         // LW
         0b100011 => {
             let addr = add_signed_offset(registers.read_register(rs), get_offset(instruction));
             let r = memory.read_word(addr);
-            itrace!("lw\t{},0x{:x} - data=0x{:08x}", get_register_name(rt), addr, r);
+            itrace!(
+                "lw\t{},0x{:x} - data=0x{:08x}",
+                get_register_name(rt),
+                addr,
+                r
+            );
             registers.write_register(rt, r);
         }
         // LWL
         0b100010 => {
+            // FIXME this is tested just on BigEndian
+
             let addr = add_signed_offset(registers.read_register(rs), get_offset(instruction));
-            let (r, mask) = memory.read_word_unaligned_lwl(addr);
-            itrace!("lwl\t{},0x{:x} - data=0x{:08x} (the data will be overlayed by previous register content)", get_register_name(rt), addr, r);
+            let r = memory.read_word(addr);
+            let vaddr = (addr % 4) * 8;
+            let mask = (0xFF_FF_FF_FF >> vaddr) << vaddr;
+            itrace!("lwl\t{},0x{:x} - data=0x{:08x}, mask=0x{:x} (the data will be overlayed by previous register content)", get_register_name(rt), addr, r, mask);
             let pv = registers.read_register(rt);
-            registers.write_register(rt, (pv & !mask) | r);
+            registers.write_register(rt, (pv & !mask) | (r & mask));
+        }
+        // LWR
+        0b100110 => {
+            //FIXME this is tested just on BigEndian
+
+            let addr = add_signed_offset(registers.read_register(rs), get_offset(instruction)) - 3;
+            let r = memory.read_word(addr);
+            let vaddr = ((4 - (addr % 4)) % 4) * 8;
+            let mask = (0xFF_FF_FF_FF << vaddr) >> vaddr;
+            itrace!("lwr\t{},0x{:x} - data=0x{:08x}, mask=0x{:x} (the data will be overlayed by previous register content)", get_register_name(rt), addr, r, mask);
+            let pv = registers.read_register(rt);
+            registers.write_register(rt, (pv & !mask) | (r & mask));
         }
         // LL
         0b110000 => {
@@ -485,43 +694,79 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
         // SB
         0b101000 => {
             itrace!("sb\t");
-            memory.write_byte(add_signed_offset(registers.read_register(rs), get_offset(instruction)), registers.read_register(rt));
+            memory.write_byte(
+                add_signed_offset(registers.read_register(rs), get_offset(instruction)),
+                registers.read_register(rt),
+            );
         }
         // SH
         0b101001 => {
             let address = add_signed_offset(registers.read_register(rs), get_offset(instruction));
-            itrace!("sh\t{},0x{:x} - data=0x{:04x}", get_register_name(rt), address, registers.read_register(rt) & 0xFFFF);
+            itrace!(
+                "sh\t{},0x{:x} - data=0x{:04x}",
+                get_register_name(rt),
+                address,
+                registers.read_register(rt) & 0xFFFF
+            );
             memory.write_halfword(address, registers.read_register(rt));
         }
         // SW
         0b101011 => {
             let address = add_signed_offset(registers.read_register(rs), get_offset(instruction));
-            itrace!("sw\t{},0x{:x} - data=0x{:08x}", get_register_name(rt), address, registers.read_register(rt));
+            itrace!(
+                "sw\t{},0x{:x} - data=0x{:08x}",
+                get_register_name(rt),
+                address,
+                registers.read_register(rt)
+            );
             memory.write_word(address, registers.read_register(rt));
         }
         // SWL
         0b101010 => {
             let address = add_signed_offset(registers.read_register(rs), get_offset(instruction));
-            itrace!("swl\t{},0x{:x} - data=0x{:08x} (only part of the data will be stored)", get_register_name(rt), address, registers.read_register(rt));
+            itrace!(
+                "swl\t{},0x{:x} - data=0x{:08x} (only part of the data will be stored)",
+                get_register_name(rt),
+                address,
+                registers.read_register(rt)
+            );
             memory.write_word_unaligned_swl(address, registers.read_register(rt));
         }
         // SWR
         0b101110 => {
             let address = add_signed_offset(registers.read_register(rs), get_offset(instruction));
-            itrace!("swr\t{},0x{:x} - data=0x{:08x} (only part of the data will be stored)", get_register_name(rt), address, registers.read_register(rt));
+            itrace!(
+                "swr\t{},0x{:x} - data=0x{:08x} (only part of the data will be stored)",
+                get_register_name(rt),
+                address,
+                registers.read_register(rt)
+            );
             memory.write_word_unaligned_swr(address, registers.read_register(rt));
         }
         // SC
         0b111000 => {
             let address = add_signed_offset(registers.read_register(rs), get_offset(instruction));
-            itrace!("sc\t{},0x{:x} - data=0x{:08x}", get_register_name(rt), address, registers.read_register(rt));
+            itrace!(
+                "sc\t{},0x{:x} - data=0x{:08x}",
+                get_register_name(rt),
+                address,
+                registers.read_register(rt)
+            );
             memory.write_word(address, registers.read_register(rt));
-            registers.write_register(rt, 1);    // to indicate success
+            registers.write_register(rt, 1); // to indicate success
         }
         // SLTI
         0b001010 => {
             let a = registers.read_register(rs) < (get_offset(instruction) as u32);
-            itrace!("slti\t{},{},0x{:x} - {:08x} < {:08x} = {}", get_register_name(rt), get_register_name(rs), get_offset(instruction), registers.read_register(rs), get_offset(instruction), a);
+            itrace!(
+                "slti\t{},{},0x{:x} - {:08x} < {:08x} = {}",
+                get_register_name(rt),
+                get_register_name(rs),
+                get_offset(instruction),
+                registers.read_register(rs),
+                get_offset(instruction),
+                a
+            );
             if a {
                 registers.write_register(rt, 1);
             } else {
@@ -530,8 +775,17 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
         }
         // SLTIU
         0b001011 => {
-            let a = registers.read_register(rs) < (sign_extend(get_offset(instruction) as u32, 16) as u32);
-            itrace!("sltiu\t{},{},0x{:x} - {:08x} < {:08x} = {}", get_register_name(rt), get_register_name(rs), sign_extend(get_offset(instruction) as u32, 16), registers.read_register(rs), (sign_extend(get_offset(instruction) as u32, 16) as u32), a);
+            let a = registers.read_register(rs)
+                < (sign_extend(get_offset(instruction) as u32, 16) as u32);
+            itrace!(
+                "sltiu\t{},{},0x{:x} - {:08x} < {:08x} = {}",
+                get_register_name(rt),
+                get_register_name(rs),
+                sign_extend(get_offset(instruction) as u32, 16),
+                registers.read_register(rs),
+                (sign_extend(get_offset(instruction) as u32, 16) as u32),
+                a
+            );
             if a {
                 registers.write_register(rt, 1);
             } else {
@@ -544,7 +798,10 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
             match rt {
                 0b11111 => {
                     print!("ALUIPC");
-                    let r = 0xFF_FF_00_00 & (((registers.get_pc() as i32) + (((get_offset(instruction) as u32) << 16) as i32)) as u32);
+                    let r = 0xFF_FF_00_00
+                        & (((registers.get_pc() as i32)
+                            + (((get_offset(instruction) as u32) << 16) as i32))
+                            as u32);
                     registers.write_register(rs, r);
                 }
                 _ => panic!("Unknown PCREL operation"),
@@ -556,8 +813,15 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
                 // MUL
                 0b000010 => {
                     assert_eq!(get_shift(instruction), 0);
-                    let (r, _) = (registers.read_register(rs) as i32).overflowing_mul(registers.read_register(rt) as i32);
-                    itrace!("mul\t{},{},{} - res_value={}", get_register_name(rd), get_register_name(rs), get_register_name(rt), r);
+                    let (r, _) = (registers.read_register(rs) as i32)
+                        .overflowing_mul(registers.read_register(rt) as i32);
+                    itrace!(
+                        "mul\t{},{},{} - res_value={}",
+                        get_register_name(rd),
+                        get_register_name(rs),
+                        get_register_name(rt),
+                        r
+                    );
                     registers.write_register(rd, r as u32);
                 }
                 _ => {
@@ -575,7 +839,8 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
                     let shift = get_shift(instruction);
                     assert_eq!(shift & 0xFC, 0b01000);
                     let bp = shift & 0x03;
-                    let r = (registers.read_register(rt) << (8 * bp)) | (registers.read_register(rs) >> (32 - 8 * bp));
+                    let r = (registers.read_register(rt) << (8 * bp))
+                        | (registers.read_register(rs) >> (32 - 8 * bp));
                     registers.write_register(rd, r);
                 }
                 0b111011 => {
@@ -585,11 +850,11 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
                         29 => {
                             // should throw an exception
                             warn!("Attempt to read from UserLocalRegister in coprocessor. Unsupported. Faking it with some constant value.");
-                            registers.write_register(rt, 0x58e950);     // this value was copied from gdb on real HW
-                            // UserLocal Register. This register provides read access to the coprocessor 0
-                            // UserLocal register, if it is implemented.
-                            // In some operating environments, the UserLocal register is a pointer to a
-                            // thread-specific storage block.
+                            registers.write_register(rt, 0x58e950); // this value was copied from gdb on real HW
+                                                                    // UserLocal Register. This register provides read access to the coprocessor 0
+                                                                    // UserLocal register, if it is implemented.
+                                                                    // In some operating environments, the UserLocal register is a pointer to a
+                                                                    // thread-specific storage block.
                         }
                         _ => {
                             println!();
@@ -603,7 +868,13 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
                     let pos = get_shift(instruction);
                     let size = rd + 1;
 
-                    itrace!("ext\t{},{},pos={},size={}", get_register_name(rt), get_register_name(rs), pos,size);
+                    itrace!(
+                        "ext\t{},{},pos={},size={}",
+                        get_register_name(rt),
+                        get_register_name(rs),
+                        pos,
+                        size
+                    );
 
                     assert!(pos < 32);
                     assert!(size <= 32);
@@ -612,14 +883,23 @@ pub fn eval_instruction<T>(instruction: u32, registers: &mut RegisterFile<T>, me
                     registers.write_register(rt, r);
                 }
                 _ => {
-                    error!("Tried to execute SPECIAL3 instruction with unknown FUNCT - 0b{:06b}", funct);
-                    panic!("Tried to execute SPECIAL3 instruction with unknown FUNCT - 0b{:06b}", funct);
+                    error!(
+                        "Tried to execute SPECIAL3 instruction with unknown FUNCT - 0b{:06b}",
+                        funct
+                    );
+                    panic!(
+                        "Tried to execute SPECIAL3 instruction with unknown FUNCT - 0b{:06b}",
+                        funct
+                    );
                 }
             }
         }
         _ => {
             print!("!!!ERROR!!!\n");
-            panic!("Tried to execute instruction with unknown OPCODE - 0b{:06b}", opcode)
+            panic!(
+                "Tried to execute instruction with unknown OPCODE - 0b{:06b}",
+                opcode
+            )
         }
     };
 

@@ -4,17 +4,18 @@ pub const A3: u32 = 7;
 pub const STACK_POINTER: u32 = 29;
 
 
-pub struct RegisterFile<F> where F: Fn(u32, u32) {
+pub struct RegisterFile<F, G> where F: Fn(u32, u32), G: Fn(u32, u32) {
     reg: [u32; 31],
     pc: u32,
     hi: u32,
     lo: u32,
     read_hook: F,
+    write_hook: G
 }
 
-impl<F> RegisterFile<F> where F: Fn(u32, u32) {
-    pub fn new(stack_pointer: u32, hook: F) -> RegisterFile<F> {
-        let mut r = RegisterFile { reg: [0u32; 31], pc: 0u32, hi: 0u32, lo: 0u32, read_hook: hook };
+impl<F, G> RegisterFile<F, G> where F: Fn(u32, u32),  G: Fn(u32, u32) {
+    pub fn new(stack_pointer: u32, read_hook: F, write_hook: G) -> RegisterFile<F, G> {
+        let mut r = RegisterFile { reg: [0u32; 31], pc: 0u32, hi: 0u32, lo: 0u32, read_hook, write_hook};
         r.write_register(29, stack_pointer);
         r
     }
@@ -33,6 +34,8 @@ impl<F> RegisterFile<F> where F: Fn(u32, u32) {
     }
 
     pub fn write_register(&mut self, id: u32, value: u32) {
+        (self.write_hook)(id, value);
+
         if id != 0 {
             self.reg[id as usize - 1] = value;
         }

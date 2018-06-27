@@ -21,8 +21,10 @@ pub struct CPUFlags {
     pub fake_root: bool,
     pub fake_root_directory: bool,
     pub checked_register_reads: bool,
+    pub checked_register_writes: bool,
     pub full_register_values_check: bool,
     pub panic_on_invalid_read: bool,
+    pub panic_on_invalid_write: bool,
     pub block_ioctl_on_stdio: bool,
     pub ioctl_fail_always: bool,
 }
@@ -33,8 +35,10 @@ impl CPUFlags {
             fake_root: false,
             fake_root_directory: false,
             checked_register_reads: true,
+            checked_register_writes: false,
             full_register_values_check: false,
             panic_on_invalid_read: false,
+            panic_on_invalid_write: false,
             block_ioctl_on_stdio: false,
             ioctl_fail_always: false,
         }
@@ -47,9 +51,14 @@ pub fn run_cpu(mut memory: Memory, cpu_config: CPUConfig) {
     let tracefile = cpu_config.tracefile.as_ref().map(|s| s.clone());
     let watchdog_status = RefCell::from(Watchdog::new(tracefile, &cpu_config.flags));
 
-    let mut register_file = RegisterFile::new(cpu_config.stack_pointer, |reg: u32, val: u32| {
-        watchdog_status.borrow().check_read(reg, val);
-    });
+    let mut register_file = RegisterFile::new(
+        cpu_config.stack_pointer,
+        |reg: u32, val: u32| {
+            watchdog_status.borrow().check_read(reg, val);
+        },
+        |reg: u32, val: u32| {
+            watchdog_status.borrow().check_write(reg, val);
+        });
 
     let mut program_counter: VecDeque<u32> = VecDeque::with_capacity(3);
     program_counter.push_back(cpu_config.entry_point);
@@ -84,7 +93,8 @@ pub fn run_cpu(mut memory: Memory, cpu_config: CPUConfig) {
             program_counter.push_back(register_file.get_pc())
         }
 
-        /*if pc == 0x77fdc6ec {
+        // compile time debugging breakpoint ;)
+        /*if pc == 0x53391c {
             debug_mode = true;
         }*/
 

@@ -1,13 +1,13 @@
-use std::fs::File;
-use std::io::BufReader;
-use std::io::BufRead;
-use std::collections::HashMap;
-use serde_json;
-use flate2::read::GzDecoder;
-use cpu::registers::RegisterFile;
-use memory::Memory;
-use cpu::registers::get_register_name;
 use cpu::control::CPUFlags;
+use cpu::registers::get_register_name;
+use cpu::registers::RegisterFile;
+use flate2::read::GzDecoder;
+use memory::Memory;
+use serde_json;
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::BufRead;
+use std::io::BufReader;
 
 pub struct Watchdog<'a> {
     instruction_number: usize,
@@ -43,10 +43,19 @@ impl<'a> Watchdog<'a> {
         }
 
         if let Some(trace) = self.real_trace.as_ref() {
-            let res = trace.get(self.instruction_number - 1).expect("Trace not long enough.").registers.get(&reg);
+            let res = trace
+                .get(self.instruction_number - 1)
+                .expect("Trace not long enough.")
+                .registers
+                .get(&reg);
             if let Some(res) = res {
                 if *res != val {
-                    warn!("Value 0x{:x} was read from register {}. Should have been 0x{:x}", val, get_register_name(reg), *res);
+                    warn!(
+                        "Value 0x{:x} was read from register {}. Should have been 0x{:x}",
+                        val,
+                        get_register_name(reg),
+                        *res
+                    );
                     if self.cpu_flags.panic_on_invalid_read {
                         panic!("Read wrong value from register...");
                     }
@@ -55,8 +64,37 @@ impl<'a> Watchdog<'a> {
         }
     }
 
+    pub fn check_write(&self, reg: u32, val: u32) {
+        if !self.cpu_flags.checked_register_writes || self.trace_gap {
+            return;
+        }
 
-    pub fn run_cpu_watchdogs<T>(&mut self, register_file: &mut RegisterFile<T>, memory: &Memory) where T: Fn(u32, u32) {
+        if let Some(trace) = self.real_trace.as_ref() {
+            let res = trace
+                .get(self.instruction_number)
+                .and_then(|x| x.registers.get(&reg));
+            if let Some(res) = res {
+                if *res != val {
+                    warn!("Value 0x{:x} was written into register {}. Should have been 0x{:x}. (jumps are off by one)", val, get_register_name(reg), *res);
+                    /*if let Some(n) = trace.get(self.instruction_number+1).and_then(|x| x.registers.get(&reg)) {
+                        warn!("Value of the register after next instruction is 0x{:x}", n);
+                    }*/
+                    if self.cpu_flags.panic_on_invalid_write {
+                        panic!("Wrote wrong value from register...");
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn run_cpu_watchdogs<T, U>(
+        &mut self,
+        register_file: &mut RegisterFile<T, U>,
+        memory: &Memory,
+    ) where
+        T: Fn(u32, u32),
+        U: Fn(u32, u32),
+    {
         // null pointer
         if register_file.get_pc() == 0 {
             panic!("Jumped to address 0 - probably wrong behaviour!");
@@ -74,7 +112,9 @@ impl<'a> Watchdog<'a> {
 
         // trace if enabled
         if let Some(trace) = self.real_trace.as_ref() {
-            let instruction_record = trace.get(self.instruction_number).expect("Trace not long enough");
+            let instruction_record = trace
+                .get(self.instruction_number)
+                .expect("Trace not long enough");
 
             if register_file.get_pc() == instruction_record.address {
                 if self.trace_gap {
@@ -88,7 +128,6 @@ impl<'a> Watchdog<'a> {
                 }
             }
 
-
             if self.cpu_flags.full_register_values_check && !self.trace_gap {
                 for (reg, val) in &instruction_record.registers {
                     // exclude these registers
@@ -98,10 +137,14 @@ impl<'a> Watchdog<'a> {
                         _ => {}
                     }
 
-
                     if self.instruction_number > 3 {
                         if register_file.read_register(*reg) != *val {
-                            error!("Unexpected value in register {}. Found 0x{:x} instead of 0x{:x}.", get_register_name(*reg), register_file.read_register(*reg), *val, );
+                            error!(
+                                "Unexpected value in register {}. Found 0x{:x} instead of 0x{:x}.",
+                                get_register_name(*reg),
+                                register_file.read_register(*reg),
+                                *val,
+                            );
                         }
                     } else {
                         if register_file.read_register(*reg) != *val {
@@ -122,13 +165,11 @@ impl<'a> Watchdog<'a> {
     }
 }
 
-
 #[derive(Deserialize)]
 pub struct InstructionRecord {
     pub address: u32,
     pub registers: HashMap<u32, u32>,
 }
-
 
 pub fn read_trace(tracefile: String) -> Vec<InstructionRecord> {
     let f = File::open(tracefile.as_str()).unwrap();
@@ -143,4 +184,3 @@ pub fn read_trace(tracefile: String) -> Vec<InstructionRecord> {
     }
     real_trace
 }
-
