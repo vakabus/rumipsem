@@ -19,6 +19,7 @@ mod elf;
 mod memory;
 mod mylog;
 mod syscalls;
+mod syscall_numbers;
 
 use args::parse_arguments;
 use elf::load_elf_into_mem_and_get_init_pc;

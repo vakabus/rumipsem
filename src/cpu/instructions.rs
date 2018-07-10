@@ -5,6 +5,7 @@ use cpu::registers::get_register_name;
 use cpu::registers::RegisterFile;
 use memory::Memory;
 use syscalls::eval_syscall;
+use ::cpu::instructions_opcodes::*;
 
 pub fn eval_instruction<T,S>(
     instruction: u32,
@@ -28,6 +29,7 @@ where
     }
 
     let opcode = get_opcode(instruction);
+    let opcode = translate_opcode(opcode);
     let funct = get_funct(instruction);
     let rs = get_rs(instruction);
     let rt = get_rt(instruction);
@@ -37,7 +39,7 @@ where
 
     match opcode {
         // ALU operation
-        0b000000 => {
+        InstructionOpcode::SPECIAL => {
             //print!("ALUOp ");
             match funct {
                 // SLL
@@ -434,7 +436,7 @@ where
             }
         }
         // ADDIU
-        0b001001 => {
+        InstructionOpcode::ADDIU => {
             let r = add_signed_offset(registers.read_register(rs), get_offset(instruction));
             itrace!(
                 "addiu\t{},{},0x{:04x} - res=0x{:x}",
@@ -446,7 +448,7 @@ where
             registers.write_register(rt, r);
         }
         // ANDI
-        0b001100 => {
+        InstructionOpcode::ANDI => {
             itrace!(
                 "andi\t{},{},0x{:x}",
                 get_register_name(rt),
@@ -457,7 +459,7 @@ where
             registers.write_register(rt, r);
         }
         // XORI
-        0b001110 => {
+        InstructionOpcode::XORI => {
             itrace!(
                 "xori\t{},{},0x{:x}",
                 get_register_name(rt),
@@ -468,7 +470,7 @@ where
             registers.write_register(rt, r);
         }
         // ORI
-        0b001101 => {
+        InstructionOpcode::ORI => {
             itrace!(
                 "ori\t{},{},0x{:04x}",
                 get_register_name(rt),
@@ -479,7 +481,7 @@ where
             registers.write_register(rt, r);
         }
         // BAL or BGEZAL
-        0b000001 => {
+        InstructionOpcode::REGIMM => {
             let mut lower = false;
             let mut equal = false;
             let mut higher = false;
@@ -534,7 +536,7 @@ where
             );
         }
         // BEQ
-        0b000100 => {
+        InstructionOpcode::BEQ => {
             let target_offset = sign_extend((get_offset(instruction) as u32) << 2, 18);
             let r = (registers.get_pc() as i32 + 4 + target_offset) as u32;
             itrace!(
@@ -549,7 +551,7 @@ where
             }
         }
         // BNE
-        0b000101 => {
+        InstructionOpcode::BNE => {
             let target_offset = sign_extend((get_offset(instruction) as u32) << 2, 18);
             let r = (registers.get_pc() as i32 + 4 + target_offset) as u32;
             itrace!(
@@ -564,7 +566,7 @@ where
             }
         }
         // BGTZ
-        0b000111 => {
+        InstructionOpcode::BGTZ => {
             assert_eq!(rt, 0);
             let target_offset = sign_extend((get_offset(instruction) as u32) << 2, 18);
             let target = (registers.get_pc() as i32 + 4 + target_offset) as u32;
@@ -574,7 +576,7 @@ where
             }
         }
         //BLEZ
-        0b000110 => {
+        InstructionOpcode::BLEZ => {
             assert_eq!(rt, 0);
             let target_offset = sign_extend((get_offset(instruction) as u32) << 2, 18);
             let target = (registers.get_pc() as i32 + 4 + target_offset) as u32;
@@ -584,14 +586,14 @@ where
             }
         }
         // J
-        0b000010 => {
+        InstructionOpcode::J => {
             itrace!("j\t");
             let pc = registers.get_pc() + 4;
             let target = (pc & 0xF0_00_00_00) | ((instruction & 0x03_FF_FF_FF) << 2);
             registers.jump_to(target);
         }
         // JAL
-        0b000011 => {
+        InstructionOpcode::JAL => {
             itrace!("jal\t");
             let pc = registers.get_pc();
             let target = (pc & 0xF0_00_00_00) | ((instruction & 0x03_FF_FF_FF) << 2);
@@ -599,13 +601,13 @@ where
             registers.jump_to(target);
         }
         // AUI
-        0b001111 => {
+        InstructionOpcode::AUI => {
             itrace!("aui\t");
             let r = add_to_upper_bits(registers.read_register(rs), get_offset(instruction));
             registers.write_register(rt, r);
         }
         // LB
-        0b100000 => {
+        InstructionOpcode::LB => {
             let addr = add_signed_offset(registers.read_register(rs), get_offset(instruction));
             let r = sign_extend(memory.read_byte(addr), 8);
             itrace!(
@@ -617,7 +619,7 @@ where
             registers.write_register(rt, r as u32);
         }
         //LHU
-        0b100101 => {
+        InstructionOpcode::LHU => {
             let r = memory.read_halfword(add_signed_offset(
                 registers.read_register(rs),
                 get_offset(instruction),
@@ -626,7 +628,7 @@ where
             registers.write_register(rt, r);
         }
         //LH
-        0b100001 => {
+        InstructionOpcode::LH => {
             let r = memory.read_halfword(add_signed_offset(
                 registers.read_register(rs),
                 get_offset(instruction),
@@ -636,7 +638,7 @@ where
             registers.write_register(rt, r);
         }
         // LBU
-        0b100100 => {
+        InstructionOpcode::LBU => {
             let addr = add_signed_offset(registers.read_register(rs), get_offset(instruction));
             let r = memory.read_byte(addr);
             itrace!(
@@ -648,7 +650,7 @@ where
             registers.write_register(rt, r);
         }
         // LW
-        0b100011 => {
+        InstructionOpcode::LW => {
             let addr = add_signed_offset(registers.read_register(rs), get_offset(instruction));
             let r = memory.read_word(addr);
             itrace!(
@@ -660,7 +662,7 @@ where
             registers.write_register(rt, r);
         }
         // LWL
-        0b100010 => {
+        InstructionOpcode::LWL => {
             // FIXME this is tested just on BigEndian
 
             let addr = add_signed_offset(registers.read_register(rs), get_offset(instruction));
@@ -672,7 +674,7 @@ where
             registers.write_register(rt, (pv & !mask) | (r & mask));
         }
         // LWR
-        0b100110 => {
+        InstructionOpcode::LWR => {
             //FIXME this is tested just on BigEndian
 
             let addr = add_signed_offset(registers.read_register(rs), get_offset(instruction)) - 3;
@@ -684,7 +686,7 @@ where
             registers.write_register(rt, (pv & !mask) | (r & mask));
         }
         // LL
-        0b110000 => {
+        InstructionOpcode::LL => {
             let addr = add_signed_offset(registers.read_register(rs), get_offset(instruction));
             let r = memory.read_word(addr);
             itrace!("ll\t{},0x{:x} - data=0x{:08x} - synchronized nature of the instruction is ignored, this is preR6 version of the instruction", get_register_name(rt), addr, r);
@@ -692,7 +694,7 @@ where
             result_cpu_event = CPUEvent::AtomicLoadModifyWriteBegan;
         }
         // SB
-        0b101000 => {
+        InstructionOpcode::SB => {
             itrace!("sb\t");
             memory.write_byte(
                 add_signed_offset(registers.read_register(rs), get_offset(instruction)),
@@ -700,7 +702,7 @@ where
             );
         }
         // SH
-        0b101001 => {
+        InstructionOpcode::SH => {
             let address = add_signed_offset(registers.read_register(rs), get_offset(instruction));
             itrace!(
                 "sh\t{},0x{:x} - data=0x{:04x}",
@@ -711,7 +713,7 @@ where
             memory.write_halfword(address, registers.read_register(rt));
         }
         // SW
-        0b101011 => {
+        InstructionOpcode::SW => {
             let address = add_signed_offset(registers.read_register(rs), get_offset(instruction));
             itrace!(
                 "sw\t{},0x{:x} - data=0x{:08x}",
@@ -722,7 +724,7 @@ where
             memory.write_word(address, registers.read_register(rt));
         }
         // SWL
-        0b101010 => {
+        InstructionOpcode::SWL => {
             let address = add_signed_offset(registers.read_register(rs), get_offset(instruction));
             itrace!(
                 "swl\t{},0x{:x} - data=0x{:08x} (only part of the data will be stored)",
@@ -733,7 +735,7 @@ where
             memory.write_word_unaligned_swl(address, registers.read_register(rt));
         }
         // SWR
-        0b101110 => {
+        InstructionOpcode::SWR => {
             let address = add_signed_offset(registers.read_register(rs), get_offset(instruction));
             itrace!(
                 "swr\t{},0x{:x} - data=0x{:08x} (only part of the data will be stored)",
@@ -744,7 +746,7 @@ where
             memory.write_word_unaligned_swr(address, registers.read_register(rt));
         }
         // SC
-        0b111000 => {
+        InstructionOpcode::SC => {
             let address = add_signed_offset(registers.read_register(rs), get_offset(instruction));
             itrace!(
                 "sc\t{},0x{:x} - data=0x{:08x}",
@@ -756,7 +758,7 @@ where
             registers.write_register(rt, 1); // to indicate success
         }
         // SLTI
-        0b001010 => {
+        InstructionOpcode::SLTI => {
             let a = registers.read_register(rs) < (get_offset(instruction) as u32);
             itrace!(
                 "slti\t{},{},0x{:x} - {:08x} < {:08x} = {}",
@@ -774,7 +776,7 @@ where
             }
         }
         // SLTIU
-        0b001011 => {
+        InstructionOpcode::SLTIU => {
             let a = registers.read_register(rs)
                 < (sign_extend(get_offset(instruction) as u32, 16) as u32);
             itrace!(
@@ -793,7 +795,7 @@ where
             }
         }
         // PCREL
-        0b111011 => {
+        InstructionOpcode::PCREL => {
             itrace!("PCREL ");
             match rt {
                 0b11111 => {
@@ -808,7 +810,7 @@ where
             }
         }
         // SPECIAL2
-        0b011100 => {
+        InstructionOpcode::SPECIAL2 => {
             match funct {
                 // MUL
                 0b000010 => {
@@ -831,7 +833,7 @@ where
             }
         }
         // SPECIAL3
-        0b011111 => {
+        InstructionOpcode::SPECIAL3 => {
             match funct {
                 // ALIGN
                 0b100000 => {
@@ -895,9 +897,8 @@ where
             }
         }
         _ => {
-            print!("!!!ERROR!!!\n");
             panic!(
-                "Tried to execute instruction with unknown OPCODE - 0b{:06b}",
+                "Tried to execute unimplemented instruction, OPCODE = {:?}",
                 opcode
             )
         }
