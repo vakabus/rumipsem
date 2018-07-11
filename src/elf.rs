@@ -6,7 +6,7 @@ use std::fs::File;
 use goblin::error;
 use std::io::Read;
 
-pub fn load_elf_into_mem_and_get_init_pc(path: &str) -> error::Result<(Memory, u32)> {
+pub fn load_elf(path: &str) -> error::Result<(Memory, u32)> {
     info!("Parsing ELF file and loading program image into memory...");
     let path = Path::new(path);
     let mut fd = File::open(path)?;

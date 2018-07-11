@@ -2,110 +2,180 @@ use cpu::event::CPUEvent;
 use cpu::instructions::eval_instruction;
 use cpu::registers::RegisterFile;
 use cpu::watchdog::Watchdog;
+use syscalls::System;
 use memory::Memory;
-use std::cell::*;
 use std::collections::VecDeque;
 use std::io;
 use std::io::Read;
 
 #[derive(Debug)]
-pub struct CPUConfig {
+pub struct CPUFlags {
     pub tracefile: Option<String>,
-    pub entry_point: u32,
-    pub stack_pointer: u32,
-    pub flags: CPUFlags,
+    pub syscalls_conf: CPUFlagsSyscalls,
+    pub watchdog_conf: CPUFlagsWatchdog,
 }
 
 #[derive(Debug)]
-pub struct CPUFlags {
-    pub fake_root: bool,
-    pub fake_root_directory: bool,
-    pub checked_register_reads: bool,
-    pub checked_register_writes: bool,
-    pub full_register_values_check: bool,
-    pub panic_on_invalid_read: bool,
-    pub panic_on_invalid_write: bool,
-    pub block_ioctl_on_stdio: bool,
-    pub ioctl_fail_always: bool,
+pub struct CPUFlagsWatchdog {
+    pub trace_checked_register_reads: bool,
+    pub trace_checked_register_writes: bool,
+    pub trace_full_register_values_check: bool,
+    pub trace_panic_on_invalid_read: bool,
+    pub trace_panic_on_invalid_write: bool,
+}
+
+#[derive(Debug)]
+pub struct CPUFlagsSyscalls {
+    pub sys_fake_root: bool,
+    pub sys_fake_root_directory: bool,
+    pub sys_block_ioctl_on_stdio: bool,
+    pub sys_ioctl_fail_always: bool,
 }
 
 impl CPUFlags {
     pub fn default() -> CPUFlags {
         CPUFlags {
-            fake_root: false,
-            fake_root_directory: false,
-            checked_register_reads: true,
-            checked_register_writes: false,
-            full_register_values_check: false,
-            panic_on_invalid_read: false,
-            panic_on_invalid_write: false,
-            block_ioctl_on_stdio: false,
-            ioctl_fail_always: false,
+            tracefile: None,
+            syscalls_conf: CPUFlagsSyscalls {
+                sys_fake_root: false,
+                sys_fake_root_directory: false,
+                sys_block_ioctl_on_stdio: false,
+                sys_ioctl_fail_always: false,
+            },
+            watchdog_conf: CPUFlagsWatchdog {
+                trace_checked_register_reads: true,
+                trace_checked_register_writes: false,
+                trace_full_register_values_check: false,
+                trace_panic_on_invalid_read: false,
+                trace_panic_on_invalid_write: false,
+            },
         }
     }
 }
 
-pub fn run_cpu(mut memory: Memory, cpu_config: CPUConfig) {
-    info!("Running CPU with configuration {:?}", cpu_config);
+pub struct EmulatorContext {
+    memory: Memory,
+    system: System,
+    watchdog: Watchdog,
+    registers: RegisterFile<'static>,
+}
 
-    let tracefile = cpu_config.tracefile.as_ref().map(|s| s.clone());
-    let watchdog_status = RefCell::from(Watchdog::new(tracefile, &cpu_config.flags));
+static mut EMULATOR_STATE: Option<EmulatorContext> = None;
 
-    let mut register_file = RegisterFile::new(
-        cpu_config.stack_pointer,
-        |reg: u32, val: u32| {
-            watchdog_status.borrow().check_read(reg, val);
-        },
-        |reg: u32, val: u32| {
-            watchdog_status.borrow().check_write(reg, val);
-        });
+impl EmulatorContext {
+    pub fn main_loop(memory: Memory, stack_pointer: u32, entry_point: u32, flags: CPUFlags) {
+        let watchdog = Watchdog::new(flags.tracefile, flags.watchdog_conf);
+        let registers = RegisterFile::new(stack_pointer);
+        let system = System::new(flags.syscalls_conf);
 
-    let mut program_counter: VecDeque<u32> = VecDeque::with_capacity(3);
-    program_counter.push_back(cpu_config.entry_point);
-    program_counter.push_back(cpu_config.entry_point + 4);
+        let state = EmulatorContext {
+            memory,
+            system,
+            watchdog,
+            registers,
+        };
+        let state = state.init_singleton();
 
-    register_file.set_pc(cpu_config.entry_point);
+        // this is UNSAFE hack. Creating self referencing struct. It bypasses the borrow
+        // checker by using reference obtained from the singleton itself using unsafe block.
+        // It should not cause any memory corruption, because read-only reference is used
+        // and the Watchdog will not be discarded until the end of whole program...
+        state.registers.configure_watchdog(&EmulatorContext::get_ref().watchdog);
+        state.run_cpu(entry_point);
+    }
 
-    let mut debug_mode = false;
+    fn init_singleton(self) -> &'static mut EmulatorContext {
+        unsafe { EMULATOR_STATE.get_or_insert(self) }
+    }
 
-    loop {
-        let pc = program_counter.pop_front().unwrap();
-        register_file.set_pc(pc);
-
-        watchdog_status
-            .borrow_mut()
-            .run_cpu_watchdogs(&mut register_file, &memory);
-
-        let instruction = memory.fetch_instruction(pc);
-        let exit = eval_instruction(instruction, &mut register_file, &mut memory, &cpu_config.flags);
-        match exit {
-            CPUEvent::Exit => break,
-            CPUEvent::AtomicLoadModifyWriteBegan => watchdog_status
-                .borrow_mut()
-                .atomic_read_modify_write_began(),
-            _ => {}
+    pub fn get_mut_ref() -> &'static mut EmulatorContext {
+        unsafe {
+            EMULATOR_STATE
+                .as_mut()
+                .expect("Emulator singleton not initialized!")
         }
+    }
 
-        if register_file.get_pc() == pc {
-            let npc = program_counter.front().unwrap() + 4;
-            program_counter.push_back(npc);
-        } else {
-            program_counter.push_back(register_file.get_pc())
+    pub fn get_ref() -> &'static EmulatorContext {
+        unsafe {
+            EMULATOR_STATE
+                .as_ref()
+                .expect("Emulator singleton not initialized!")
         }
+    }
 
-        // compile time debugging breakpoint ;)
-        /*if pc == 0x53391c {
-            debug_mode = true;
-        }*/
+    pub fn run_cpu(&mut self, entry_point: u32) {
+        let memory = &mut self.memory;
+        let system = &mut self.system;
+        let register_file = &mut self.registers;
+        let watchdog = &mut self.watchdog;
 
-        if debug_mode {
-            register_file.print_registers();
-            let stdin = io::stdin();
-            let mut buf = [0; 16];
-            let _ = stdin.lock().read(&mut buf);
-            if buf[0] != ('\n' as u8) {
-                print!("Continuing...");
-                debug_mode = false;
+        //info!("Running CPU with configuration {:?}", cpu_config);
+
+        // initialize flow control
+        let mut program_counter: VecDeque<u32> = VecDeque::with_capacity(3);
+        program_counter.push_back(entry_point);
+        register_file.set_pc(entry_point);
+
+        let mut debug_mode = false;
+
+        // work loop
+        loop {
+            let pc = program_counter.pop_front().unwrap();
+            register_file.set_pc(pc);
+
+            watchdog.run_cpu_watchdogs(register_file, memory);
+
+            let instruction = memory.fetch_instruction(pc);
+            let instruction_result =
+                eval_instruction(instruction, register_file, memory, system);
+
+            // instruction result handling
+            match instruction_result {
+                CPUEvent::Nothing => {
+                    if program_counter.len() == 0 {
+                        program_counter.push_back(pc + 4);
+                    }
+                }
+                CPUEvent::Exit => break,
+                CPUEvent::AtomicLoadModifyWriteBegan => {
+                    watchdog.atomic_read_modify_write_began();
+
+                    if program_counter.len() == 0 {
+                        program_counter.push_back(pc + 4);
+                    }
+                }
+                CPUEvent::FlowChangeImmediate(npc) => {
+                    if program_counter.len() == 0 {
+                        program_counter.push_back(npc);
+                    } else {
+                        panic!("Flow control failed. Multiple jumps at once.");
+                    }
+                }
+                CPUEvent::FlowChangeDelayed(npc) => {
+                    if program_counter.len() == 0 {
+                        program_counter.push_back(pc + 4);
+                        program_counter.push_back(npc);
+                    } else {
+                        panic!("Flow control failed. Multiple jumps at once.");
+                    }
+                }
+            }
+
+            // compile time debugging breakpoint ;)
+            /*if pc == 0x53391c {
+                debug_mode = true;
+            }*/
+
+            if debug_mode {
+                register_file.print_registers();
+                let stdin = io::stdin();
+                let mut buf = [0; 16];
+                let _ = stdin.lock().read(&mut buf);
+                if buf[0] != ('\n' as u8) {
+                    print!("Continuing...");
+                    debug_mode = false;
+                }
             }
         }
     }

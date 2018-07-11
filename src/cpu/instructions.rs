@@ -1,22 +1,19 @@
 use cpu::bitutils::*;
 use cpu::control::*;
 use cpu::event::*;
+use cpu::float::FloatFmt;
+use cpu::instructions_constants::*;
 use cpu::registers::get_register_name;
 use cpu::registers::RegisterFile;
+use syscalls::System;
 use memory::Memory;
-use syscalls::eval_syscall;
-use ::cpu::instructions_opcodes::*;
 
-pub fn eval_instruction<T,S>(
+pub fn eval_instruction(
     instruction: u32,
-    registers: &mut RegisterFile<T, S>,
+    registers: &mut RegisterFile,
     memory: &mut Memory,
-    flags: &CPUFlags,
-) -> CPUEvent
-where
-    T: Fn(u32, u32),
-    S: Fn(u32, u32),
-{
+    system: &mut System,
+) -> CPUEvent {
     let mut result_cpu_event = CPUEvent::Nothing;
 
     macro_rules! itrace {
@@ -232,13 +229,13 @@ where
                     registers.write_register(rd, pc + 8);
                     let r = registers.read_register(rs);
                     assert_eq!(r & 0x00_00_00_03, 0);
-                    registers.jump_to(r);
+                    result_cpu_event = CPUEvent::FlowChangeDelayed(r);
                 }
                 // JR
                 0b001000 => {
                     itrace!("jr\t{}", get_register_name(rs));
                     let t = registers.read_register(rs);
-                    registers.jump_to(t);
+                    result_cpu_event = CPUEvent::FlowChangeDelayed(t);
                 }
                 // SLT
                 0b101010 => {
@@ -415,7 +412,7 @@ where
                 }
                 // SYSCALL
                 0b001100 => {
-                    result_cpu_event = eval_syscall(instruction, registers, memory, flags);
+                    result_cpu_event = system.eval_syscall(instruction, registers, memory);
                 }
                 // SYNC
                 0b001111 => {
@@ -523,7 +520,7 @@ where
                 if link {
                     registers.write_register(31, pc + 8);
                 }
-                registers.jump_to(address);
+                result_cpu_event = CPUEvent::FlowChangeDelayed(address);
                 jumped = true;
             }
             itrace!(
@@ -547,7 +544,7 @@ where
                 registers.read_register(rs) == registers.read_register(rt)
             );
             if registers.read_register(rs) == registers.read_register(rt) {
-                registers.jump_to(r);
+                result_cpu_event = CPUEvent::FlowChangeDelayed(r);
             }
         }
         // BNE
@@ -562,7 +559,7 @@ where
                 registers.read_register(rs) != registers.read_register(rt)
             );
             if registers.read_register(rs) != registers.read_register(rt) {
-                registers.jump_to(r);
+                result_cpu_event = CPUEvent::FlowChangeDelayed(r);
             }
         }
         // BGTZ
@@ -572,7 +569,7 @@ where
             let target = (registers.get_pc() as i32 + 4 + target_offset) as u32;
             itrace!("bgtz\t{},0x{:x}", get_register_name(rs), target);
             if (registers.read_register(rs) as i32) > 0 {
-                registers.set_pc(target);
+                result_cpu_event = CPUEvent::FlowChangeDelayed(target);
             }
         }
         //BLEZ
@@ -582,7 +579,7 @@ where
             let target = (registers.get_pc() as i32 + 4 + target_offset) as u32;
             itrace!("blez\t{},0x{:x}", get_register_name(rs), target);
             if (registers.read_register(rs) as i32) <= 0 {
-                registers.set_pc(target);
+                result_cpu_event = CPUEvent::FlowChangeDelayed(target);
             }
         }
         // J
@@ -590,7 +587,7 @@ where
             itrace!("j\t");
             let pc = registers.get_pc() + 4;
             let target = (pc & 0xF0_00_00_00) | ((instruction & 0x03_FF_FF_FF) << 2);
-            registers.jump_to(target);
+            result_cpu_event = CPUEvent::FlowChangeDelayed(target);
         }
         // JAL
         InstructionOpcode::JAL => {
@@ -598,7 +595,7 @@ where
             let pc = registers.get_pc();
             let target = (pc & 0xF0_00_00_00) | ((instruction & 0x03_FF_FF_FF) << 2);
             registers.write_register(31, pc + 8);
-            registers.jump_to(target);
+            result_cpu_event = CPUEvent::FlowChangeDelayed(target);
         }
         // AUI
         InstructionOpcode::AUI => {
@@ -654,9 +651,9 @@ where
             let addr = add_signed_offset(registers.read_register(rs), get_offset(instruction));
             let r = memory.read_word(addr);
             itrace!(
-                "lw\t{},0x{:x} - data=0x{:08x}",
-                get_register_name(rt),
+                "lw\tmem[0x{:x}] -> {}, data=0x{:08x}",
                 addr,
+                get_register_name(rt),
                 r
             );
             registers.write_register(rt, r);
@@ -716,7 +713,7 @@ where
         InstructionOpcode::SW => {
             let address = add_signed_offset(registers.read_register(rs), get_offset(instruction));
             itrace!(
-                "sw\t{},0x{:x} - data=0x{:08x}",
+                "sw\t{} -> mem[0x{:x}], data=0x{:08x}",
                 get_register_name(rt),
                 address,
                 registers.read_register(rt)
@@ -896,12 +893,38 @@ where
                 }
             }
         }
-        _ => {
-            panic!(
-                "Tried to execute unimplemented instruction, OPCODE = {:?}",
-                opcode
-            )
+        InstructionOpcode::SWC1 => {
+            let addr = add_signed_offset(registers.read_register(rs), get_offset(instruction));
+            let r = registers.read_fpr(rt) as u32;
+            itrace!("swc1\tfpr[{}] -> mem[0x{:x}], data=0x{:08x}", rt, addr, r);
+            memory.write_word(addr, r);
         }
+        InstructionOpcode::LWC1 => {
+            let addr = add_signed_offset(registers.read_register(rs), get_offset(instruction));
+            let r = memory.read_word(addr);
+            itrace!("lwc1\tmem[0x{:x}] -> fpr[{}], data=0x{:08x}", addr, rt, r);
+            registers.write_fpr(rt, r as f32);
+        }
+        InstructionOpcode::COP1 => {
+            let fmt = rs;
+            let ft = rt;
+            let fs = rd;
+            let fd = get_shift(instruction);
+            match funct {
+                0b000000 => {
+                    itrace!("float ADD {} <- {} + {}", fd, fs, ft);
+                    let a = FloatFmt::from_raw(fmt, fs, registers);
+                    let b = FloatFmt::from_raw(fmt, ft, registers);
+                    (a + b).save(fd, registers);
+                    unimplemented!("needs testing");
+                }
+                _ => panic!("Unknown COP1 funct, 0b{:06b}", funct),
+            }
+        }
+        _ => panic!(
+            "Tried to execute unimplemented instruction, OPCODE = {:?}",
+            opcode
+        ),
     };
 
     return result_cpu_event;

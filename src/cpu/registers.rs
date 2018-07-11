@@ -1,44 +1,62 @@
+use cpu::watchdog::Watchdog;
 
 pub const V0: u32 = 2;
 pub const A3: u32 = 7;
 pub const STACK_POINTER: u32 = 29;
 
 
-pub struct RegisterFile<F, G> where F: Fn(u32, u32), G: Fn(u32, u32) {
-    reg: [u32; 31],
+pub struct RegisterFile<'a> {
+    gpr: [u32; 31],
+    fpr: [f32; 32],
     pc: u32,
     hi: u32,
     lo: u32,
-    read_hook: F,
-    write_hook: G
+    watchdog: Option<&'a Watchdog>,
 }
 
-impl<F, G> RegisterFile<F, G> where F: Fn(u32, u32),  G: Fn(u32, u32) {
-    pub fn new(stack_pointer: u32, read_hook: F, write_hook: G) -> RegisterFile<F, G> {
-        let mut r = RegisterFile { reg: [0u32; 31], pc: 0u32, hi: 0u32, lo: 0u32, read_hook, write_hook};
+impl<'a> RegisterFile<'a> {
+    pub fn new(stack_pointer: u32) -> RegisterFile<'a> {
+        let mut r = RegisterFile { gpr: [0u32; 31], fpr: [0f32; 32], pc: 0u32, hi: 0u32, lo: 0u32, watchdog: None};
         r.write_register(29, stack_pointer);
         r
+    }
+
+    pub fn configure_watchdog(&mut self, watchdog: &'a Watchdog) {
+        self.watchdog = Some(watchdog);
     }
 
     pub fn read_register(&self, id: u32) -> u32 {
         let res = if id == 0 {
             0
         } else {
-            self.reg[id as usize - 1]
+            self.gpr[id as usize - 1]
         };
 
         // runtime check
-        (self.read_hook)(id, res);
+        if let Some(watchdog) = self.watchdog {
+            watchdog.check_read(id, res);
+        }
 
         res
     }
 
     pub fn write_register(&mut self, id: u32, value: u32) {
-        (self.write_hook)(id, value);
+        // runtime check
+        if let Some(watchdog) = self.watchdog {
+            watchdog.check_write(id, value);
+        }
 
         if id != 0 {
-            self.reg[id as usize - 1] = value;
+            self.gpr[id as usize - 1] = value;
         }
+    }
+
+    pub fn read_fpr(&self, id: u32) -> f32 {
+        self.fpr[id as usize]
+    }
+
+    pub fn write_fpr(&mut self, id: u32, val: f32) {
+        self.fpr[id as usize] = val;
     }
 
     pub fn get_pc(&self) -> u32 {
@@ -47,10 +65,6 @@ impl<F, G> RegisterFile<F, G> where F: Fn(u32, u32),  G: Fn(u32, u32) {
 
     pub fn set_pc(&mut self, value: u32) {
         self.pc = value;
-    }
-
-    pub fn jump_to(&mut self, address: u32) {
-        self.set_pc(address);
     }
 
     pub fn read_hi(&self) -> u32 {

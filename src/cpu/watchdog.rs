@@ -1,4 +1,4 @@
-use cpu::control::CPUFlags;
+use cpu::control::CPUFlagsWatchdog;
 use cpu::registers::get_register_name;
 use cpu::registers::RegisterFile;
 use flate2::read::GzDecoder;
@@ -9,16 +9,16 @@ use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
 
-pub struct Watchdog<'a> {
+pub struct Watchdog {
     instruction_number: usize,
     real_trace: Option<Vec<InstructionRecord>>,
     nop_count: usize,
     trace_gap: bool,
-    cpu_flags: &'a CPUFlags,
+    cpu_flags: CPUFlagsWatchdog,
 }
 
-impl<'a> Watchdog<'a> {
-    pub fn new(tracefile: Option<String>, cpu_flags: &'a CPUFlags) -> Watchdog<'a> {
+impl Watchdog {
+    pub fn new(tracefile: Option<String>, cpu_flags: CPUFlagsWatchdog) -> Watchdog {
         let real_trace = if let Some(tracefile) = tracefile {
             info!("Loading trace into memory...");
             let res = Some(read_trace(tracefile));
@@ -38,7 +38,7 @@ impl<'a> Watchdog<'a> {
     }
 
     pub fn check_read(&self, reg: u32, val: u32) {
-        if !self.cpu_flags.checked_register_reads || self.trace_gap {
+        if !self.cpu_flags.trace_checked_register_reads || self.trace_gap {
             return;
         }
 
@@ -56,7 +56,7 @@ impl<'a> Watchdog<'a> {
                         get_register_name(reg),
                         *res
                     );
-                    if self.cpu_flags.panic_on_invalid_read {
+                    if self.cpu_flags.trace_panic_on_invalid_read {
                         panic!("Read wrong value from register...");
                     }
                 }
@@ -65,7 +65,7 @@ impl<'a> Watchdog<'a> {
     }
 
     pub fn check_write(&self, reg: u32, val: u32) {
-        if !self.cpu_flags.checked_register_writes || self.trace_gap {
+        if !self.cpu_flags.trace_checked_register_writes || self.trace_gap {
             return;
         }
 
@@ -79,7 +79,7 @@ impl<'a> Watchdog<'a> {
                     /*if let Some(n) = trace.get(self.instruction_number+1).and_then(|x| x.registers.get(&reg)) {
                         warn!("Value of the register after next instruction is 0x{:x}", n);
                     }*/
-                    if self.cpu_flags.panic_on_invalid_write {
+                    if self.cpu_flags.trace_panic_on_invalid_write {
                         panic!("Wrote wrong value from register...");
                     }
                 }
@@ -87,14 +87,7 @@ impl<'a> Watchdog<'a> {
         }
     }
 
-    pub fn run_cpu_watchdogs<T, U>(
-        &mut self,
-        register_file: &mut RegisterFile<T, U>,
-        memory: &Memory,
-    ) where
-        T: Fn(u32, u32),
-        U: Fn(u32, u32),
-    {
+    pub fn run_cpu_watchdogs(&mut self, register_file: &mut RegisterFile, memory: &Memory) {
         // null pointer
         if register_file.get_pc() == 0 {
             panic!("Jumped to address 0 - probably wrong behaviour!");
@@ -128,7 +121,7 @@ impl<'a> Watchdog<'a> {
                 }
             }
 
-            if self.cpu_flags.full_register_values_check && !self.trace_gap {
+            if self.cpu_flags.trace_full_register_values_check && !self.trace_gap {
                 for (reg, val) in &instruction_record.registers {
                     // exclude these registers
                     match *reg {

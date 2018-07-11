@@ -1,5 +1,6 @@
 extern crate goblin;
 extern crate libc;
+extern crate nix;
 extern crate serde;
 extern crate serde_json;
 #[macro_use]
@@ -18,13 +19,14 @@ mod cpu;
 mod elf;
 mod memory;
 mod mylog;
-mod syscalls;
+mod signals;
 mod syscall_numbers;
+mod syscalls;
 
 use args::parse_arguments;
-use elf::load_elf_into_mem_and_get_init_pc;
-use mylog::configure_logging;
 use cpu::control::CPUFlags;
+use elf::load_elf;
+use mylog::configure_logging;
 
 fn main() {
     let args = parse_arguments();
@@ -33,15 +35,21 @@ fn main() {
     //configure_logging(3);
     //run_coredump("mips_binaries/core_busybox-mips2_noarg/coredump".to_string(), 0x4002b0, 0x7ffffe50, Some("mips_binaries/core_busybox-mips2_noarg/trace.gz".to_string()));
 
-    
     if args.is_coredump {
-        let entry_point = args.entry_point.expect("Coredumps do not contain entry point. Must be specified manually.");
-        let stack_pointer = args.stack_pointer.expect("Coredumps contain stack, but I don't know where. You need to specify it manually.");
-        run_coredump(args.executable, entry_point, stack_pointer, args.trace_file, args.flags);
+        let entry_point = args.entry_point
+            .expect("Coredumps do not contain entry point. Must be specified manually.");
+        let stack_pointer = args.stack_pointer.expect(
+            "Coredumps contain stack, but I don't know where. You need to specify it manually.",
+        );
+        run_coredump(
+            args.executable,
+            entry_point,
+            stack_pointer,
+            args.flags,
+        );
     } else {
         run_binary(args.executable, args.arguments, args.flags);
     }
-
 
     //run_coredump("mips_binaries/core_busybox-mips_noarg/coredump", 0x4001b0, 0x7ffffe50, Some("mips_binaries/core_busybox-mips_noarg/trace.gz"));
     //run_coredump(        "mips_binaries/core_busybox-mips2_whoami/coredump".to_string(),        0x4002b0,        0x7ffffe50,        Some("mips_binaries/core_busybox-mips2_whoami/trace.gz".to_string()),    );
@@ -52,7 +60,6 @@ fn main() {
     //run_binary("mips_binaries/busybox-mips");
 }
 
-
 /// With coredumps, all we need is to load the correct sections into memory. Than just run
 /// the CPU. Small problem is, that there is no entrypoint in coredumps. So it must be provided
 /// by other means.
@@ -60,29 +67,24 @@ pub fn run_coredump(
     path: String,
     entry_point: u32,
     stack_pointer: u32,
-    trace_file: Option<String>,
-    flags: CPUFlags
+    flags: CPUFlags,
 ) {
+    // initialize memory
     let (memory, _) =
-        load_elf_into_mem_and_get_init_pc(path.as_str()).expect("Failed to process ELF file");
+        load_elf(path.as_str()).expect("Failed to process ELF file");
+
+    // run
     info!("Starting CPU loop:");
-    cpu::control::run_cpu(
-        memory,
-        cpu::control::CPUConfig {
-            tracefile: trace_file,
-            entry_point,
-            stack_pointer,
-            flags,
-        },
-    );
+    cpu::control::EmulatorContext::main_loop(memory, stack_pointer, entry_point, flags);
+
     info!("Program terminated gracefully");
 }
 
 pub fn run_binary(path: String, arguments: Vec<String>, flags: CPUFlags) {
+    //initialize memory and stack
     let (mut memory, entry_point) =
-        load_elf_into_mem_and_get_init_pc(path.as_str()).expect("Failed to process ELF file");
+        load_elf(path.as_str()).expect("Failed to process ELF file");
 
-    //initialize stack
     let mut arguments = arguments;
     arguments.insert(0, path);
 
@@ -90,15 +92,9 @@ pub fn run_binary(path: String, arguments: Vec<String>, flags: CPUFlags) {
     let stack_pointer = 0x7ffffe50;
     memory.initialize_stack_at(stack_pointer, environment_vars, arguments);
 
+    // run
     info!("Starting CPU loop:");
-    cpu::control::run_cpu(
-        memory,
-        cpu::control::CPUConfig {
-            tracefile: None,
-            entry_point,
-            stack_pointer,
-            flags,
-        },
-    );
+    cpu::control::EmulatorContext::main_loop(memory, stack_pointer, entry_point, flags);
+
     info!("Program terminated gracefully");
 }
