@@ -19,7 +19,6 @@ mod cpu;
 mod elf;
 mod memory;
 mod mylog;
-mod signals;
 mod syscall_numbers;
 mod syscalls;
 
