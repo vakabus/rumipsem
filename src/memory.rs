@@ -222,10 +222,18 @@ impl Memory {
     }
 
     pub fn translate_address(&self, address: u32) -> *const u8 {
+        if address == 0 {
+            return 0 as *const u8;
+        }
+
         self.data[address as usize..].as_ptr()
     }
 
     pub fn translate_address_mut(&mut self, address: u32) -> *mut u8 {
+        if address == 0 {
+            return 0 as *mut u8;
+        }
+
         self.data[address as usize..].as_mut_ptr()
     }
 

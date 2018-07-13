@@ -7,15 +7,89 @@ use cpu::registers::STACK_POINTER;
 /// List of MIPS syscall numbers can be found here:
 /// https://github.com/torvalds/linux/blob/master/arch/mips/include/uapi/asm/unistd.h
 use memory::Memory;
+use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet, Signal};
 use num_traits::cast::ToPrimitive;
+use std::collections::HashMap;
 use std::ffi::CStr;
 use std::io::Error;
+use std::mem::size_of;
 use std::time::SystemTime;
 use syscall_numbers::*;
 
 struct Iovec {
     pub iov_base: u32,
     pub iov_len: usize,
+}
+
+#[repr(C)]
+struct MipsStat {
+    st_dev: u64,
+    _st_padding1: [u32; 2],
+    st_ino: u64,
+    st_mode: u32,
+    st_nlink: u32,
+    st_uid: u32,
+    st_gid: u32,
+    st_rdev: u64,
+    _st_padding2: [u32; 2],
+    st_size: u64,
+    st_atime: u32,
+    st_atime_nsec: u32,
+    st_mtime: u32,
+    st_mtime_nsec: u32,
+    st_ctime: u32,
+    st_ctime_nsec: u32,
+    st_blksize: u32,
+    _st_padding3: u32,
+    st_blocks: u64,
+    _st_padding4: [u32; 14],
+}
+
+#[repr(C)]
+struct MipsSigaction {
+    __sa_handler: u32,
+    sa_mask: [u32; 32],
+    sa_flags: i32,
+    sa_restorer: u32,
+}
+
+impl From<[u32; 35]> for MipsSigaction {
+    fn from(struc: [u32; 35]) -> MipsSigaction {
+        unsafe { ::std::mem::transmute(struc) }
+    }
+}
+
+impl Into<[u32; 35]> for MipsSigaction {
+    fn into(self) -> [u32; 35] {
+        unsafe { ::std::mem::transmute(self) }
+    }
+}
+
+fn translate_stat(stat: ::libc::stat) -> [u32; size_of::<MipsStat>() / 4] {
+    let s = MipsStat {
+        st_dev: stat.st_dev,
+        st_ino: stat.st_ino,
+        st_mode: stat.st_mode,
+        st_nlink: stat.st_nlink as u32,
+        st_uid: stat.st_uid,
+        st_gid: stat.st_gid,
+        st_rdev: stat.st_rdev,
+        st_size: stat.st_size as u64,
+        st_atime: stat.st_atime as u32,
+        st_atime_nsec: stat.st_atime_nsec as u32,
+        st_mtime: stat.st_mtime as u32,
+        st_mtime_nsec: stat.st_mtime_nsec as u32,
+        st_ctime: stat.st_ctime as u32,
+        st_ctime_nsec: stat.st_ctime_nsec as u32,
+        st_blksize: stat.st_blksize as u32,
+        st_blocks: stat.st_blocks as u64,
+        _st_padding1: [0, 0],
+        _st_padding2: [0, 0],
+        _st_padding3: 0,
+        _st_padding4: [0u32; 14],
+    };
+
+    unsafe { ::std::mem::transmute(s) }
 }
 
 fn translate_iovec(iovec_addr: u32, iovcnt: u32, memory: &mut Memory) -> Vec<Iovec> {
@@ -46,6 +120,41 @@ fn translate_iovec_libc(iovec_addr: u32, iovcnt: u32, memory: &mut Memory) -> Ve
     iovec
 }
 
+#[allow(overflowing_literals)]
+fn translate_signal_flags(mask: i32) -> i32 {
+    const SA_ONSTACK: i32 = 0x08000000;
+    const SA_RESETHAND: i32 = 0x80000000;
+    const SA_RESTART: i32 = 0x10000000;
+    const SA_SIGINFO: i32 = 0x00000008;
+    const SA_NODEFER: i32 = 0x40000000;
+    const SA_NOCLDWAIT: i32 = 0x00010000;
+    const SA_NOCLDSTOP: i32 = 0x00000001;
+
+    let mut res = 0i32;
+    if mask & SA_ONSTACK == SA_ONSTACK {
+        res ^= ::libc::SA_ONSTACK;
+    }
+    if mask & SA_RESETHAND == SA_RESETHAND {
+        res ^= ::libc::SA_RESETHAND;
+    }
+    if mask & SA_RESTART == SA_RESTART {
+        res ^= ::libc::SA_RESTART;
+    }
+    if mask & SA_SIGINFO == SA_SIGINFO {
+        res ^= ::libc::SA_SIGINFO;
+    }
+    if mask & SA_NODEFER == SA_NODEFER {
+        res ^= ::libc::SA_NODEFER;
+    }
+    if mask & SA_NOCLDWAIT == SA_NOCLDWAIT {
+        res ^= ::libc::SA_NOCLDWAIT;
+    }
+    if mask & SA_NOCLDSTOP == SA_NOCLDSTOP {
+        res ^= ::libc::SA_NOCLDSTOP;
+    }
+    res
+}
+
 fn check_error<T: Default + Ord + ToPrimitive>(num: T) -> Result<u32, Error> {
     if num < T::default() {
         let e = Error::last_os_error();
@@ -56,13 +165,23 @@ fn check_error<T: Default + Ord + ToPrimitive>(num: T) -> Result<u32, Error> {
     }
 }
 
+fn read_argument_from_memory(argn: u32, registers: &RegisterFile, memory: &Memory) -> u32 {
+    assert!(argn > 4);
+    let argn = argn - 1;
+    memory.read_word(registers.read_register(STACK_POINTER) + 4 * argn)
+}
+
 pub struct System {
     config: CPUFlagsSyscalls,
+    sigactions: HashMap<u32, MipsSigaction>,
 }
 
 impl System {
     pub fn new(config: CPUFlagsSyscalls) -> System {
-        System { config }
+        System {
+            config,
+            sigactions: HashMap::new(),
+        }
     }
 
     pub fn eval_syscall(
@@ -117,8 +236,76 @@ impl System {
                     Ok(0)
                 }
                 SyscallO32::NRRt_sigprocmask => {
-                    itrace!("RT_SIGPROCMASK (ignored)");
-                    Ok(0)
+                    let how = arg1;
+                    itrace!("RT_SIGPROCMASK how={}", how);
+
+                    // sigset je 128bitu velky = 16 bytu
+                    let mut sigset = [0u32; 32];
+                    if arg2 != 0 {
+                        for i in 0..32 {
+                            sigset[i as usize] = memory.read_word(arg2 + i * 4);
+                        }
+                    }
+
+                    // sigset_t is 128bytes wide
+
+                    let mut oldsigset = [0u32; 32];
+                    if arg3 != 0 {
+                        for i in 0..32 {
+                            oldsigset[i as usize] = memory.read_word(arg3 + i * 4);
+                        }
+                    }
+
+                    let result = unsafe {
+                        ::libc::sigprocmask(
+                            how as ::libc::c_int,
+                            if arg2 == 0 {
+                                0 as *const ::libc::sigset_t
+                            } else {
+                                sigset.as_ptr() as *const ::libc::sigset_t
+                            },
+                            if arg3 == 0 {
+                                0 as *mut ::libc::sigset_t
+                            } else {
+                                oldsigset.as_mut_ptr() as *mut ::libc::sigset_t
+                            },
+                        )
+                    };
+
+                    if arg3 != 0 {
+                        for i in 0..32 {
+                            memory.write_word(arg3 + i * 4, sigset[i as usize]);
+                        }
+                    }
+
+                    check_error(result)
+                }
+                SyscallO32::NRRt_sigaction => {
+                    let signum = arg1;
+                    itrace!("RT_SIGACTION signal={}", signum);
+
+                    // struct sigaction is 140bytes wide
+
+                    let mut sigaction = [0u32; 35];
+                    if arg2 != 0 {
+                        for i in 0..35 {
+                            sigaction[i as usize] = memory.read_word(arg2 + i * 4);
+                        }
+                    }
+
+                    let mut oldsigaction = self.sigactions
+                        .insert(signum, MipsSigaction::from(sigaction));
+
+                    if let Some(oldsigaction) = oldsigaction {
+                        let oldsigaction: [u32; 35] = oldsigaction.into();
+                        if arg2 != 0 {
+                            for i in 0..35 {
+                                memory.write_word(arg3 + i * 4, oldsigaction[i as usize]);
+                            }
+                        }
+                    }
+
+                    self.reannounce_signal_handlers(signum)
                 }
                 SyscallO32::NRGetuid => {
                     if self.config.sys_fake_root {
@@ -161,28 +348,125 @@ impl System {
 
                     check_error(unsafe { ::libc::getpid() })
                 }
-                SyscallO32::NRStat64 => {
-                    //panic!("This syscall was disabled!");
+                SyscallO32::NRGetppid => {
+                    itrace!("GETPPID");
 
-                    //FIXME struct translation ??
+                    check_error(unsafe { ::libc::getppid() })
+                }
+                SyscallO32::NRUname => {
+                    itrace!("UNAME");
 
-                    let (file, res) = unsafe {
-                        (
-                            CStr::from_ptr(memory.translate_address_mut(arg1) as *mut i8),
-                            ::libc::stat(
-                                memory.translate_address_mut(arg1) as *mut i8,
-                                memory.translate_address_mut(arg2) as *mut ::libc::stat,
-                            ),
+                    let utsname = memory.translate_address_mut(arg1) as *mut ::libc::utsname;
+                    check_error(unsafe { ::libc::uname(utsname) })
+                }
+                SyscallO32::NRWait4 => {
+                    itrace!("WAIT4");
+
+                    let pid = arg1;
+                    let wstatus = memory.translate_address_mut(arg2);
+                    let options = arg3;
+                    let mut rusage = [0u64; 18];
+
+                    let respis = unsafe {
+                        ::libc::wait4(
+                            pid as i32,
+                            wstatus as *mut i32,
+                            options as i32,
+                            rusage.as_mut_ptr() as *mut ::libc::rusage,
                         )
                     };
+
+                    // write back rusage
+                    if arg4 != 0 {
+                        memory.write_word(arg3 + 0 * 4, rusage[0] as u32);
+                        memory.write_word(arg3 + 1 * 4, rusage[1] as u32);
+                        for i in 1..18 {
+                            memory.write_word(arg3 + 2 * i * 4, (rusage[i as usize]) as u32);
+                            memory.write_word(
+                                arg3 + 2 * i * 4 + 1 * 4,
+                                (rusage[i as usize] >> 32) as u32,
+                            );
+                        }
+                    }
+
+                    check_error(respis)
+                }
+                SyscallO32::NRStat64 => {
+                    let file =
+                        unsafe { CStr::from_ptr(memory.translate_address_mut(arg1) as *mut i8) };
+                    itrace!("STAT64 file={:?} struct_at=0x{:08x}", file, arg2,);
+                    let res = ::nix::sys::stat::stat(file);
+                    if let Ok(stat) = res {
+                        let addr = arg2;
+                        let repr = translate_stat(stat);
+
+                        for i in 0..40 {
+                            memory.write_word(addr + i * 4, repr[i as usize]);
+                        }
+
+                        Ok(0)
+                    } else {
+                        check_error(-1)
+                    }
+                }
+                SyscallO32::NRLstat64 => {
+                    let file =
+                        unsafe { CStr::from_ptr(memory.translate_address_mut(arg1) as *mut i8) };
+                    itrace!("LSTAT64 file={:?} struct_at=0x{:08x}", file, arg2,);
+                    let res = ::nix::sys::stat::lstat(file);
+                    if let Ok(stat) = res {
+                        let addr = arg2;
+                        let repr = translate_stat(stat);
+
+                        for i in 0..40 {
+                            memory.write_word(addr + i * 4, repr[i as usize]);
+                        }
+
+                        Ok(0)
+                    } else {
+                        check_error(-1)
+                    }
+                }
+                SyscallO32::NRFstat64 => {
+                    itrace!("FSTAT64 fd={} struct_at=0x{:08x}", arg1, arg2,);
+                    let res = ::nix::sys::stat::fstat(arg1 as ::libc::c_int);
+                    if let Ok(stat) = res {
+                        let addr = arg2;
+                        let repr = translate_stat(stat);
+
+                        for i in 0..40 {
+                            memory.write_word(addr + i * 4, repr[i as usize]);
+                        }
+
+                        Ok(0)
+                    } else {
+                        check_error(-1)
+                    }
+                }
+                SyscallO32::NRGettid => {
+                    itrace!("GETTID");
+
+                    check_error(unsafe { ::libc::syscall(::libc::SYS_gettid) })
+                }
+                SyscallO32::NRFork => {
+                    itrace!("FORK");
+
+                    check_error(unsafe { ::libc::fork() })
+                }
+                SyscallO32::NRExecve => {
+                    let filename = memory.translate_address(arg1) as *const i8;
+                    let name = unsafe { CStr::from_ptr(filename) };
+                    let argv = memory.translate_address(arg2) as *const *const i8;
+                    let envp = memory.translate_address(arg3) as *const *const i8;
+
                     itrace!(
-                        "STAT64 file={:?} struct_at=0x{:08x} res={}",
-                        file,
+                        "EXECVE filename={:?} &argv=0x{:x} &envp=0x{:x}",
+                        name,
                         arg2,
-                        res
+                        arg3
                     );
-                    warn!("Struct in argument was not translated.");
-                    check_error(res)
+
+                    check_error(unsafe { ::libc::execve(filename, argv, envp) })
                 }
                 SyscallO32::NRIoctl => {
                     itrace!("IOCTL a0={} a1=0x{:x} a2=0x{:x}", arg1, arg2, arg3);
@@ -200,6 +484,42 @@ impl System {
                             ::libc::ioctl(arg1 as i32, arg2 as u64, memory.translate_address(arg3))
                         })
                     }
+                }
+                SyscallO32::NRFutex => {
+                    itrace!("FUTEX");
+                    let uaddr_ptr = memory.translate_address(arg1);
+                    let futex_op = arg2;
+                    let val = arg3;
+                    let timeout_ptr = arg4;
+                    let uaddr2_ptr = memory.translate_address(read_argument_from_memory(5, registers, memory));
+                    let val3 = read_argument_from_memory(6, registers, memory);
+                    
+                    let timeout = ::libc::timespec {
+                        tv_sec: memory.read_word(timeout_ptr) as i64,
+                        tv_nsec: memory.read_word(timeout_ptr + 4) as i64,
+                    };
+
+                    check_error(unsafe {
+                        ::libc::syscall(::libc::SYS_futex, uaddr2_ptr, futex_op, val, &timeout, uaddr_ptr, val3)
+                    })
+                    
+                }
+                SyscallO32::NRClock_gettime => {
+                    itrace!("CLOCK_GETTIME");
+
+                    let clockid = arg1;
+                    let mut time = ::libc::timespec {
+                        tv_sec: 0,
+                        tv_nsec: 0,
+                    };
+                    let res = unsafe {
+                        ::libc::clock_gettime(clockid as i32, &mut time as *mut ::libc::timespec)
+                    };
+
+                    memory.write_word(arg2, time.tv_sec as u32);
+                    memory.write_word(arg2 + 4, time.tv_nsec as u32);
+
+                    check_error(res)
                 }
                 SyscallO32::NRDup2 => {
                     itrace!("DUP2 oldfd={} newfd={}", arg1, arg2);
@@ -329,7 +649,7 @@ impl System {
                     let fd = arg1 as i32;
                     let offset: i64 = (((arg2 as u64) << 32) | (arg3 as u64)) as i64;
                     let result_pointer = arg4;
-                    let whence = memory.read_word(registers.read_register(STACK_POINTER) + 4 * 4);
+                    let whence = read_argument_from_memory(5, registers, memory);
 
                     let mut result = unsafe { ::libc::lseek(fd as i32, offset, whence as i32) };
 
@@ -430,4 +750,42 @@ impl System {
             return exit;
         }
     }
+
+    fn reannounce_signal_handlers(&self, signum: u32) -> Result<u32, Error> {
+        let sigact = self.sigactions.get(&signum);
+        let action;
+
+        if let Some(sigact) = sigact {
+            let sigset = unsafe { ::std::mem::transmute(sigact.sa_mask) };
+            let mut flags = translate_signal_flags(sigact.sa_flags);
+
+            action = SigAction::new(
+                SigHandler::SigAction(signal_handler),
+                SaFlags::from_bits(flags).expect("invalid sigaction flags"),
+                sigset,
+            );
+        } else {
+            action = SigAction::new(SigHandler::SigDfl, SaFlags::empty(), SigSet::empty());
+        }
+
+        let res = unsafe {
+            sigaction(
+                Signal::from_c_int(signum as i32).expect("invalid signal"),
+                &action,
+            )
+        };
+        if res.is_err() {
+            check_error(-1i32)
+        } else {
+            Ok(0)
+        }
+    }
+}
+
+extern "C" fn signal_handler(
+    signal: ::libc::c_int,
+    _: *mut ::libc::siginfo_t,
+    _: *mut ::libc::c_void,
+) {
+    println!("ohhhhhh prisel signal {}", signal)
 }

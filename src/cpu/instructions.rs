@@ -1,5 +1,4 @@
 use cpu::bitutils::*;
-use cpu::control::*;
 use cpu::event::*;
 use cpu::float::FloatFmt;
 use cpu::instructions_constants::*;

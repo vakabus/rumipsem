@@ -2,11 +2,11 @@ use cpu::event::CPUEvent;
 use cpu::instructions::eval_instruction;
 use cpu::registers::RegisterFile;
 use cpu::watchdog::Watchdog;
-use syscalls::System;
 use memory::Memory;
 use std::collections::VecDeque;
 use std::io;
 use std::io::Read;
+use syscalls::System;
 
 #[derive(Debug)]
 pub struct CPUFlags {
@@ -74,34 +74,34 @@ impl EmulatorContext {
             watchdog,
             registers,
         };
-        let state = state.init_singleton();
 
-        // this is UNSAFE hack. Creating self referencing struct. It bypasses the borrow
-        // checker by using reference obtained from the singleton itself using unsafe block.
-        // It should not cause any memory corruption, because read-only reference is used
-        // and the Watchdog will not be discarded until the end of whole program...
-        state.registers.configure_watchdog(&EmulatorContext::get_ref().watchdog);
+        let state = unsafe {
+            // Creating self referencing struct. It bypasses the borrow
+            // checker by using reference obtained from the singleton itself using unsafe block.
+            // It should not cause any memory corruption, because read-only reference is used
+            // and the Watchdog will not be discarded until the end of whole program...
+            state.init_singleton()
+                .registers
+                .configure_watchdog(&EmulatorContext::get_ref().watchdog);
+            EmulatorContext::get_mut_ref()
+        };
         state.run_cpu(entry_point);
     }
 
-    fn init_singleton(self) -> &'static mut EmulatorContext {
-        unsafe { EMULATOR_STATE.get_or_insert(self) }
+    unsafe fn init_singleton(self) -> &'static mut EmulatorContext {
+        EMULATOR_STATE.get_or_insert(self)
     }
 
-    pub fn get_mut_ref() -> &'static mut EmulatorContext {
-        unsafe {
-            EMULATOR_STATE
-                .as_mut()
-                .expect("Emulator singleton not initialized!")
-        }
+    pub unsafe fn get_mut_ref() -> &'static mut EmulatorContext {
+        EMULATOR_STATE
+            .as_mut()
+            .expect("Emulator singleton not initialized!")
     }
 
-    pub fn get_ref() -> &'static EmulatorContext {
-        unsafe {
-            EMULATOR_STATE
-                .as_ref()
-                .expect("Emulator singleton not initialized!")
-        }
+    pub unsafe fn get_ref() -> &'static EmulatorContext {
+        EMULATOR_STATE
+            .as_ref()
+            .expect("Emulator singleton not initialized!")
     }
 
     pub fn run_cpu(&mut self, entry_point: u32) {
@@ -127,8 +127,7 @@ impl EmulatorContext {
             watchdog.run_cpu_watchdogs(register_file, memory);
 
             let instruction = memory.fetch_instruction(pc);
-            let instruction_result =
-                eval_instruction(instruction, register_file, memory, system);
+            let instruction_result = eval_instruction(instruction, register_file, memory, system);
 
             // instruction result handling
             match instruction_result {
