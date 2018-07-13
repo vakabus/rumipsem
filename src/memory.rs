@@ -1,4 +1,6 @@
-const MEMORY_SIZE: usize = 0xFF_FF_FF_FF + 1;
+use byteorder::{ByteOrder, BigEndian, LittleEndian};
+
+pub const MEMORY_SIZE: usize = 0xFF_FF_FF_FF + 1;
 
 pub enum Endianness {
     LittleEndian,
@@ -37,10 +39,10 @@ impl Memory {
     pub fn read_halfword(&self, address: u32) -> u32 {
         match self.endianness {
             Endianness::LittleEndian => {
-                (self.read_byte(address + 1) as u32) << 8 | (self.read_byte(address) as u32)
+                LittleEndian::read_u16(self.read_slice(address, 2)) as u32
             }
             Endianness::BigEndian => {
-                (self.read_byte(address) as u32) << 8 | (self.read_byte(address + 1) as u32)
+                BigEndian::read_u16(self.read_slice(address, 2)) as u32
             }
         }
     }
@@ -48,17 +50,16 @@ impl Memory {
     pub fn read_word(&self, address: u32) -> u32 {
         match self.endianness {
             Endianness::LittleEndian => {
-                (self.read_byte(address + 3) as u32) << 24
-                    | (self.read_byte(address + 2) as u32) << 16
-                    | (self.read_byte(address + 1) as u32) << 8
-                    | (self.read_byte(address) as u32)
+                LittleEndian::read_u32(self.read_slice(address, 4))
             }
             Endianness::BigEndian => {
-                (self.read_byte(address) as u32) << 24 | (self.read_byte(address + 1) as u32) << 16
-                    | (self.read_byte(address + 2) as u32) << 8
-                    | (self.read_byte(address + 3) as u32)
+                BigEndian::read_u32(self.read_slice(address, 4))
             }
         }
+    }
+
+    pub fn read_slice(&self, address: u32, len: u32) -> &[u8] {
+        &self.data[address as usize..(address + len) as usize]
     }
 
     pub fn fetch_instruction(&self, address: u32) -> u32 {

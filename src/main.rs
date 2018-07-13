@@ -8,6 +8,7 @@ extern crate serde_derive;
 extern crate argparse;
 extern crate flate2;
 extern crate num_traits;
+extern crate byteorder;
 
 #[macro_use]
 extern crate log;

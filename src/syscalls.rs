@@ -427,7 +427,7 @@ impl System {
                         check_error(-1)
                     }
                 }
-                SyscallO32::NRFstat64 => {
+                SyscallO32::NRFstat64 | SyscallO32::NRFstat => {
                     itrace!("FSTAT64 fd={} struct_at=0x{:08x}", arg1, arg2,);
                     let res = ::nix::sys::stat::fstat(arg1 as ::libc::c_int);
                     if let Ok(stat) = res {
@@ -454,19 +454,18 @@ impl System {
                     check_error(unsafe { ::libc::fork() })
                 }
                 SyscallO32::NRExecve => {
-                    let filename = memory.translate_address(arg1) as *const i8;
-                    let name = unsafe { CStr::from_ptr(filename) };
+                    let filename = unsafe { CStr::from_ptr(memory.translate_address(arg1) as *const i8) };
                     let argv = memory.translate_address(arg2) as *const *const i8;
                     let envp = memory.translate_address(arg3) as *const *const i8;
 
                     itrace!(
                         "EXECVE filename={:?} &argv=0x{:x} &envp=0x{:x}",
-                        name,
+                        filename,
                         arg2,
                         arg3
                     );
 
-                    check_error(unsafe { ::libc::execve(filename, argv, envp) })
+                    check_error(unsafe { ::libc::execve(filename.as_ptr(), argv, envp) })
                 }
                 SyscallO32::NRIoctl => {
                     itrace!("IOCTL a0={} a1=0x{:x} a2=0x{:x}", arg1, arg2, arg3);
@@ -719,6 +718,11 @@ impl System {
                 SyscallO32::NRSetuid => {
                     itrace!("SETUID uid={}", arg1);
                     check_error(unsafe { ::libc::setuid(arg1 as ::libc::uid_t) })
+                }
+                SyscallO32::NRChdir => {
+                    let dir = unsafe { CStr::from_ptr(memory.translate_address(arg1) as *const i8) };
+                    itrace!("CHDIR {:?}", dir);
+                    check_error(unsafe{ ::libc::chdir(dir.as_ptr()) })
                 }
                 _ => {
                     error!(

@@ -1,6 +1,6 @@
 #!/usr/bin/fish
 
-set COMMAND "./busybox wc test_data/p"
+set COMMAND "./busybox sort test_data/p"
 set REMOTE_IP "10.11.8.65"
 set REMOTE_USER "root"
 
