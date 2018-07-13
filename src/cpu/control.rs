@@ -44,7 +44,7 @@ impl CPUFlags {
             },
             watchdog_conf: CPUFlagsWatchdog {
                 trace_checked_register_reads: true,
-                trace_checked_register_writes: false,
+                trace_checked_register_writes: true,
                 trace_full_register_values_check: false,
                 trace_panic_on_invalid_read: false,
                 trace_panic_on_invalid_write: false,

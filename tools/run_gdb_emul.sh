@@ -7,6 +7,7 @@ start_emul() {
     { sleep 12; echo "root"; sleep 1; echo "./gdbserver 0.0.0.0:8002 $COMMAND" ; echo "poweroff" ; } | arm_now start mips32 --clean --sync --redir tcp:8001::8002 > /dev/null
 }
 
+killall qemu-system-mips
 ( start_emul ) &
 sleep 14
 
