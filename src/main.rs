@@ -6,13 +6,12 @@ extern crate serde_json;
 #[macro_use]
 extern crate serde_derive;
 extern crate argparse;
+extern crate byteorder;
 extern crate flate2;
 extern crate num_traits;
-extern crate byteorder;
 
 #[macro_use]
 extern crate log;
-//extern crate simple_logger;
 extern crate simplelog;
 
 mod args;
@@ -32,46 +31,24 @@ fn main() {
     let args = parse_arguments();
     configure_logging(args.verbosity_level);
 
-    //configure_logging(3);
-    //run_coredump("mips_binaries/core_busybox-mips2_noarg/coredump".to_string(), 0x4002b0, 0x7ffffe50, Some("mips_binaries/core_busybox-mips2_noarg/trace.gz".to_string()));
-
     if args.is_coredump {
         let entry_point = args.entry_point
             .expect("Coredumps do not contain entry point. Must be specified manually.");
         let stack_pointer = args.stack_pointer.expect(
             "Coredumps contain stack, but I don't know where. You need to specify it manually.",
         );
-        run_coredump(
-            args.executable,
-            entry_point,
-            stack_pointer,
-            args.flags,
-        );
+        run_coredump(args.executable, entry_point, stack_pointer, args.flags);
     } else {
         run_binary(args.executable, args.arguments, args.flags);
     }
-
-    //run_coredump("mips_binaries/core_busybox-mips_noarg/coredump", 0x4001b0, 0x7ffffe50, Some("mips_binaries/core_busybox-mips_noarg/trace.gz"));
-    //run_coredump(        "mips_binaries/core_busybox-mips2_whoami/coredump".to_string(),        0x4002b0,        0x7ffffe50,        Some("mips_binaries/core_busybox-mips2_whoami/trace.gz".to_string()),    );
-    //run_coredump("mips_binaries/core_busybox-mips_pwd/coredump", 0x4001b0, 0x7ffffe40, Some("mips_binaries/core_busybox-mips_pwd/trace.gz"));
-    //run_coredump("mips_binaries/core_busybox-mips_whoami/coredump", 0x4001b0, 0x7ffffe40,Some("mips_binaries/core_busybox-mips_whoami/trace.gz"));
-    //run_coredump("mips_binaries/core_busybox-mips2_whoami/coredump", 0x4002b0, 0x7ffffe40,Some("mips_binaries/core_busybox-mips2_whoami/trace.gz"));
-    //run_coredump("mips_binaries/core_wrtbinbusybox_id/coredump", 0x77f6b0d0, 0x7ffffe60, Some("mips_binaries/core_wrtbinbusybox_id/trace.gz"));
-    //run_binary("mips_binaries/busybox-mips");
 }
 
 /// With coredumps, all we need is to load the correct sections into memory. Than just run
 /// the CPU. Small problem is, that there is no entrypoint in coredumps. So it must be provided
 /// by other means.
-pub fn run_coredump(
-    path: String,
-    entry_point: u32,
-    stack_pointer: u32,
-    flags: CPUFlags,
-) {
+pub fn run_coredump(path: String, entry_point: u32, stack_pointer: u32, flags: CPUFlags) {
     // initialize memory
-    let (memory, _) =
-        load_elf(path.as_str()).expect("Failed to process ELF file");
+    let (memory, _) = load_elf(path.as_str()).expect("Failed to process ELF file");
 
     // run
     info!("Starting CPU loop:");
@@ -80,10 +57,11 @@ pub fn run_coredump(
     info!("Program terminated gracefully");
 }
 
+
+/// Loads and runs ordinary statically compiled ELF binaries.
 pub fn run_binary(path: String, arguments: Vec<String>, flags: CPUFlags) {
     //initialize memory and stack
-    let (mut memory, entry_point) =
-        load_elf(path.as_str()).expect("Failed to process ELF file");
+    let (mut memory, entry_point) = load_elf(path.as_str()).expect("Failed to process ELF file");
 
     let mut arguments = arguments;
     arguments.insert(0, path);

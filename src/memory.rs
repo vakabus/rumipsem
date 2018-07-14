@@ -1,4 +1,7 @@
-use byteorder::{ByteOrder, BigEndian, LittleEndian};
+use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt, NativeEndian};
+use std::fs::File;
+use std::io::Cursor;
+use std::io::Read;
 
 pub const MEMORY_SIZE: usize = 0xFF_FF_FF_FF + 1;
 
@@ -38,23 +41,15 @@ impl Memory {
 
     pub fn read_halfword(&self, address: u32) -> u32 {
         match self.endianness {
-            Endianness::LittleEndian => {
-                LittleEndian::read_u16(self.read_slice(address, 2)) as u32
-            }
-            Endianness::BigEndian => {
-                BigEndian::read_u16(self.read_slice(address, 2)) as u32
-            }
+            Endianness::LittleEndian => LittleEndian::read_u16(self.read_slice(address, 2)) as u32,
+            Endianness::BigEndian => BigEndian::read_u16(self.read_slice(address, 2)) as u32,
         }
     }
 
     pub fn read_word(&self, address: u32) -> u32 {
         match self.endianness {
-            Endianness::LittleEndian => {
-                LittleEndian::read_u32(self.read_slice(address, 4))
-            }
-            Endianness::BigEndian => {
-                BigEndian::read_u32(self.read_slice(address, 4))
-            }
+            Endianness::LittleEndian => LittleEndian::read_u32(self.read_slice(address, 4)),
+            Endianness::BigEndian => BigEndian::read_u32(self.read_slice(address, 4)),
         }
     }
 
@@ -253,7 +248,7 @@ impl Memory {
         arguments: Vec<String>,
     ) {
         assert_eq!(address % 8, 0);
-        debug!("Generating new stack:");
+        info!("Generating new stack");
         let mut pointer_address = address + 4;
         let mut data_address = pointer_address
             + (1 + arguments.len() as u32 + 1 + environment_variables.len() as u32 + 1 + 40) * 4;
@@ -279,7 +274,9 @@ impl Memory {
         pointer_address += 4;
 
         // environment variables
+        debug!("\tEnvironment variables:");
         for (name, value) in environment_variables {
+            debug!("\t\t Env: {}=\"{}\"", name, value);
             self.write_word(pointer_address, data_address);
             pointer_address += 4;
 
@@ -301,51 +298,41 @@ impl Memory {
         self.write_word(pointer_address, 0);
         pointer_address += 4;
 
-        // auxilary vector
-        /* Legal values for a_type (entry type).
-        #define AT_NULL         0               /* End of vector */
-        #define AT_IGNORE       1               /* Entry should be ignored */
-        #define AT_EXECFD       2               /* File descriptor of program */
-        #define AT_PHDR         3               /* Program headers for program */
-        #define AT_PHENT        4               /* Size of program header entry */
-        #define AT_PHNUM        5               /* Number of program headers */
-        #define AT_PAGESZ       6               /* System page size */
-        #define AT_BASE         7               /* Base address of interpreter */
-        #define AT_FLAGS        8               /* Flags */
-        #define AT_ENTRY        9               /* Entry point of program */
-        #define AT_NOTELF       10              /* Program is not ELF */
-        #define AT_UID          11              /* Real uid */
-        #define AT_EUID         12              /* Effective uid */
-        #define AT_GID          13              /* Real gid */
-        #define AT_EGID         14              /* Effective gid */
-        #define AT_CLKTCK       17              /* Frequency of times() */
-        /* Pointer to the global system page used for system calls and other nice things.  */
-        #define AT_SYSINFO      32
-        #define AT_SYSINFO_EHDR 33  */
+        
+        // auxiliary vector
+        debug!("\tAuxilary vector:");
+        let mut auxv: Vec<u8> = Vec::new();
+        File::open("/proc/self/auxv")
+            .expect("Could not open auxv file in /proc FS!")
+            .read_to_end(&mut auxv)
+            .expect("Could not read auxv file in /proc/self");
+
 
         let mut write_vector = |key: u32, val: u32| {
+            debug!("\t\tauxv key={} value=0x{:x}", key, val);
             self.write_word(pointer_address, key);
             self.write_word(pointer_address + 4, val);
             pointer_address += 8;
         };
 
-        write_vector(33, 0x77_FF_F0_00);
-        write_vector(16, 0);
-        write_vector(6, 0x00_00_10_00);
-        write_vector(17, 100);
-        write_vector(3, 0x00_40_00_34);
-        write_vector(4, 32);
-        write_vector(5, 4);
-        write_vector(7, 0);
-        write_vector(8, 0);
-        write_vector(9, 0x00_40_01_B0);
-        write_vector(11, 0);
-        write_vector(12, 0);
-        write_vector(13, 0);
-        write_vector(14, 0);
-        write_vector(23, 0);
-        write_vector(25, 0x7F_FF_FF_18);
-        write_vector(31, 0x7F_FF_FF_ED);
-        write_vector(0, 0);
+        let mut rdr = Cursor::new(auxv);
+
+        loop {
+            let v = rdr.read_u64::<NativeEndian>().expect("auxv parsing failed");
+            let val = rdr.read_u64::<NativeEndian>().expect("auxv parsing failed");
+
+            {
+                match v {
+                    0 | 1 | 2 | 6 | 8 | 11 | 12 | 13 | 14 | 17 => {
+                        write_vector(v as u32, val as u32);
+                    }
+                    _ => {}
+                }
+            }
+
+            if v == 0 {
+                break;
+            }
+        }
     }
 }

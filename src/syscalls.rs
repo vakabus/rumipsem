@@ -252,7 +252,8 @@ impl System {
                     let how = arg1;
                     itrace!("RT_SIGPROCMASK how={}", how);
 
-                    // sigset je 128bitu velky = 16 bytu
+                    // sigset is 128bits wide = 16 bytes (kernel)
+                    // sigset is 1024bits wide = 128bytes (glibc)
                     let mut sigset = [0u32; 32];
                     if arg2 != 0 {
                         for i in 0..32 {
@@ -260,7 +261,6 @@ impl System {
                         }
                     }
 
-                    // sigset_t is 128bytes wide
 
                     let mut oldsigset = [0u32; 32];
                     if arg3 != 0 {
@@ -785,6 +785,18 @@ impl System {
                         unsafe { CStr::from_ptr(memory.translate_address(arg1) as *const i8) };
                     itrace!("CHDIR {:?}", dir);
                     check_error(unsafe { ::libc::chdir(dir.as_ptr()) })
+                }
+                SyscallO32::NRMmap2 => {
+                    let addr = arg1;
+                    let len = arg2;
+
+                    itrace!("MMAP2 addr=0x{:x} len={}", arg1, len);
+
+                    if len == 0 {
+                        Err(Error::from_raw_os_error(::libc::EINVAL))
+                    } else {
+                        panic!("MMAP2 syscall is not implemented!");
+                    }
                 }
                 _ => {
                     error!(

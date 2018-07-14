@@ -22,7 +22,6 @@ impl Watchdog {
         let real_trace = if let Some(tracefile) = tracefile {
             info!("Loading trace into memory...");
             let res = Some(read_trace(tracefile));
-            info!("Trace loaded...");
             res
         } else {
             None

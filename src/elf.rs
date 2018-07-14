@@ -7,7 +7,7 @@ use goblin::error;
 use std::io::Read;
 
 pub fn load_elf(path: &str) -> error::Result<(Memory, u32)> {
-    info!("Parsing ELF file and loading program image into memory...");
+    info!("Parsing ELF file and loading program image into memory");
     let path = Path::new(path);
     let mut fd = File::open(path)?;
     let mut buffer = Vec::new();
@@ -29,7 +29,6 @@ pub fn load_elf(path: &str) -> error::Result<(Memory, u32)> {
         }
         debug!("\tEntry point is at {:?}", elf.header.e_entry);
 
-        debug!("Parsed ELF binary...");
         Ok((memory, elf.header.e_entry as u32))
     } else {
         panic!("File is not an ELF binary");
