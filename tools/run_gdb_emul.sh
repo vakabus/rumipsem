@@ -16,7 +16,6 @@ case "$1" in
         gdb-multiarch \
             -ex "target remote localhost:8001" \
             -ex "set heuristic-fence-post 0" \
-	    -ex "set follow-fork-mode child" \
             -ex "set confirm off" \
             -ex "generate-core-file" \
             -x "./gdb_trace.py"

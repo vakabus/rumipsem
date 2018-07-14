@@ -118,7 +118,11 @@ impl EmulatorContext {
         self.cpu_loop(program_counter, None);
     }
 
-    fn cpu_loop(&mut self, program_counter: VecDeque<u32>, register_file: Option<&mut RegisterFile<'static>>) {
+    fn cpu_loop(
+        &mut self,
+        program_counter: VecDeque<u32>,
+        register_file: Option<&mut RegisterFile<'static>>,
+    ) {
         let memory = &mut self.memory;
         let system = &mut self.system;
         let watchdog = &mut self.watchdog;
@@ -170,6 +174,8 @@ impl EmulatorContext {
                 }
                 CPUEvent::Fork(return_val) => {
                     if return_val == 0 {
+                        info!("Parent process!")
+                        /*
                         info!("Redirecting parent output into /tmp/log_parent...");
 
                         unsafe {
@@ -181,11 +187,11 @@ impl EmulatorContext {
 
                         info!("Output redirected...");
                         warn!("Fork caused trace gap... Temporaly disabling cheching...");
-                        watchdog.trace_gap_ahead();
+                        watchdog.trace_gap_ahead();*/
                     } else {
                         info!("Child process!");
 
-                        info!("Redirecting child output into /tmp/log_child_{}...", return_val);
+                        /*info!("Redirecting child output into /tmp/log_child_{}...", return_val);
                         unsafe {
                             let fd = ::libc::open(format!("/tmp/log_child_{}\0", return_val).as_ptr() as *const i8, ::libc::O_RDWR | ::libc::O_CREAT | ::libc::O_TRUNC, ::libc::S_IRUSR | ::libc::S_IWUSR);
                             ::libc::dup2(fd, 1);
@@ -194,7 +200,7 @@ impl EmulatorContext {
                         }
                         info!("Output redirected...");
                         info!("Disabled trace checking...");
-                        watchdog.disable_trace_checking();
+                        watchdog.disable_trace_checking();*/
                     }
                     if program_counter.len() == 0 {
                         info!("pc=0x{:x}", pc);
