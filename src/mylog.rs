@@ -1,3 +1,5 @@
+//! Simple module for initial logging configuration
+
 
 use simplelog::*;
 

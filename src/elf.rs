@@ -6,6 +6,7 @@ use std::fs::File;
 use goblin::error;
 use std::io::Read;
 
+/// Takes a file as an argument and returns memory image and an entry point
 pub fn load_elf(path: &str) -> error::Result<(Memory, u32)> {
     info!("Parsing ELF file and loading program image into memory");
     let path = Path::new(path);

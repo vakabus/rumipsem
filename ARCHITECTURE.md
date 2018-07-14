@@ -31,3 +31,7 @@
     * can load gziped JSON with instruction addresses and register values created with GDB and real HW / Qemu
     * has hooks in registers, so that register reads and writes can be checked
     * checks for jumps to null and too many nops in succession
+
+# Code documentation
+
+A documentation is inside the actual source code. You can also access it by running `cargo doc`, but there's not much of it, because almost everything is internal and not exported.

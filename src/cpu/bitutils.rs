@@ -1,3 +1,5 @@
+//! Bit operation utilities
+
 pub fn get_opcode(instruction: u32) -> u32 {
     (instruction & 0xFC_00_00_00) >> 26
 }

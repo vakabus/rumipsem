@@ -1,3 +1,5 @@
+//! Mainly one HUGE `eval_instruction` function.
+
 use cpu::bitutils::*;
 use cpu::event::*;
 use cpu::float::FloatFmt;

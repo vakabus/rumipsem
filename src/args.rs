@@ -1,3 +1,5 @@
+//! Module for handling argument parsing.
+
 use argparse::{ArgumentParser, StoreOption, StoreTrue, IncrBy, Store, Collect};
 
 use cpu::control::CPUFlags;

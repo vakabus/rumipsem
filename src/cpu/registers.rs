@@ -1,3 +1,5 @@
+//! All register operations are performed here.
+
 use cpu::watchdog::Watchdog;
 
 pub const V0: u32 = 2;

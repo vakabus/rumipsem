@@ -1,11 +1,16 @@
+//! This module handles all syscalls. Translates structs, emulates some syscalls without actually
+//! calling anything and much more. The single most important thing of this module is
+//! `eval_syscall` function.
+//!
+//! List of MIPS syscall numbers can be found here:
+//! https://github.com/torvalds/linux/blob/master/arch/mips/include/uapi/asm/unistd.h
+
 use cpu::control::CPUFlagsSyscalls;
 use cpu::event::CPUEvent;
 use cpu::registers::A3;
 use cpu::registers::RegisterFile;
 use cpu::registers::V0;
 use cpu::registers::STACK_POINTER;
-/// List of MIPS syscall numbers can be found here:
-/// https://github.com/torvalds/linux/blob/master/arch/mips/include/uapi/asm/unistd.h
 use memory::Memory;
 use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet, Signal};
 use num_traits::cast::ToPrimitive;

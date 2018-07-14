@@ -1,3 +1,5 @@
+//! CPU control logic. Orchestrates all components together to simulate the CPU.
+
 use cpu::event::CPUEvent;
 use cpu::instructions::eval_instruction;
 use cpu::registers::RegisterFile;

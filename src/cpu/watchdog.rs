@@ -1,3 +1,7 @@
+//! This module contains all runtime checking functionality this emulator has. It checks for
+//! invalid jumps and too many nops. It's also capable of checking program flow against recorded
+//! trace.
+
 use cpu::control::CPUFlagsWatchdog;
 use cpu::registers::get_register_name;
 use cpu::registers::RegisterFile;

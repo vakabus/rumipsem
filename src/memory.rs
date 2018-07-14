@@ -15,7 +15,7 @@ pub enum Endianness {
 /// we create the Vector filled with zeros, Rust runtime will trust the OS to provide zeroed
 /// memory. And because the Linux kernel uses copy-on-write, we can actually allocate all memory
 /// we need and the request will be fullfilled lazily. So the initial allocation does not take
-/// space and time.
+/// a lot of space and time.
 pub struct Memory {
     endianness: Endianness,
     program_break: u32,
@@ -95,7 +95,7 @@ impl Memory {
     pub fn write_word_unaligned_swl(&mut self, eff_address: u32, value: u32) {
         let vaddr = eff_address % 4;
         let addr = eff_address - vaddr;
-        // Spagetti code, but understandable
+        // Spagetti code, but hopefully more understandable
         match self.endianness {
             Endianness::BigEndian => {
                 match vaddr {

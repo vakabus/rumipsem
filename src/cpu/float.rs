@@ -1,3 +1,5 @@
+//! Float operations, mainly handling different float formats and calculating according to them.
+
 use cpu::registers::RegisterFile;
 use std::ops::Add;
 
