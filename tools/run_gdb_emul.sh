@@ -1,6 +1,6 @@
 #!/bin/bash
 
-COMMAND="./busybox-mips sh -c './busybox-mips cwd'"
+COMMAND="./busybox-mips sh -c 'echo hello | cat'"
 
 start_emul() {
     cd ../mips_binaries
@@ -16,6 +16,7 @@ case "$1" in
         gdb-multiarch \
             -ex "target remote localhost:8001" \
             -ex "set heuristic-fence-post 0" \
+	    -ex "set follow-fork-mode child" \
             -ex "set confirm off" \
             -ex "generate-core-file" \
             -x "./gdb_trace.py"

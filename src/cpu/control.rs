@@ -63,7 +63,7 @@ pub struct EmulatorContext {
 static mut EMULATOR_STATE: Option<EmulatorContext> = None;
 
 impl EmulatorContext {
-    pub fn main_loop(memory: Memory, stack_pointer: u32, entry_point: u32, flags: CPUFlags) {
+    pub fn start(memory: Memory, stack_pointer: u32, entry_point: u32, flags: CPUFlags) {
         let watchdog = Watchdog::new(flags.tracefile, flags.watchdog_conf);
         let registers = RegisterFile::new(stack_pointer);
         let system = System::new(flags.syscalls_conf);
@@ -86,7 +86,7 @@ impl EmulatorContext {
                 .configure_watchdog(&EmulatorContext::get_ref().watchdog);
             EmulatorContext::get_mut_ref()
         };
-        state.run_cpu(entry_point);
+        state.run_program(entry_point);
     }
 
     unsafe fn init_singleton(self) -> &'static mut EmulatorContext {
@@ -109,20 +109,29 @@ impl EmulatorContext {
         &self.system
     }
 
-    pub fn run_cpu(&mut self, entry_point: u32) {
-        let memory = &mut self.memory;
-        let system = &mut self.system;
-        let register_file = &mut self.registers;
-        let watchdog = &mut self.watchdog;
-
-        //info!("Running CPU with configuration {:?}", cpu_config);
-
+    pub fn run_program(&mut self, entry_point: u32) {
         // initialize flow control
         let mut program_counter: VecDeque<u32> = VecDeque::with_capacity(3);
         program_counter.push_back(entry_point);
-        register_file.set_pc(entry_point);
+
+        // run the actual loop
+        self.cpu_loop(program_counter, None);
+    }
+
+    fn cpu_loop(&mut self, program_counter: VecDeque<u32>, register_file: Option<&mut RegisterFile<'static>>) {
+        let memory = &mut self.memory;
+        let system = &mut self.system;
+        let watchdog = &mut self.watchdog;
+
+        let mut program_counter = program_counter;
 
         let mut debug_mode = false;
+
+        let register_file = if let Some(r) = register_file {
+            r
+        } else {
+            &mut self.registers
+        };
 
         // work loop
         loop {
@@ -136,14 +145,9 @@ impl EmulatorContext {
 
             // instruction result handling
             match instruction_result {
-                CPUEvent::Nothing => {
-                    if program_counter.len() == 0 {
-                        program_counter.push_back(pc + 4);
-                    }
-                }
                 CPUEvent::Exit => break,
                 CPUEvent::AtomicLoadModifyWriteBegan => {
-                    watchdog.atomic_read_modify_write_began();
+                    watchdog.trace_gap_ahead();
 
                     if program_counter.len() == 0 {
                         program_counter.push_back(pc + 4);
@@ -162,6 +166,44 @@ impl EmulatorContext {
                         program_counter.push_back(npc);
                     } else {
                         panic!("Flow control failed. Multiple jumps at once.");
+                    }
+                }
+                CPUEvent::Fork(return_val) => {
+                    if return_val == 0 {
+                        info!("Redirecting parent output into /tmp/log_parent...");
+
+                        unsafe {
+                            let fd = ::libc::open(format!("/tmp/log_parent_i={}\0", watchdog.get_instruction_number()).as_ptr() as *const i8, ::libc::O_RDWR | ::libc::O_CREAT | ::libc::O_TRUNC, ::libc::S_IRUSR | ::libc::S_IWUSR);
+                            ::libc::dup2(fd, 1);
+                            ::libc::dup2(fd, 2);
+                            ::libc::close(fd);
+                        }
+
+                        info!("Output redirected...");
+                        warn!("Fork caused trace gap... Temporaly disabling cheching...");
+                        watchdog.trace_gap_ahead();
+                    } else {
+                        info!("Child process!");
+
+                        info!("Redirecting child output into /tmp/log_child_{}...", return_val);
+                        unsafe {
+                            let fd = ::libc::open(format!("/tmp/log_child_{}\0", return_val).as_ptr() as *const i8, ::libc::O_RDWR | ::libc::O_CREAT | ::libc::O_TRUNC, ::libc::S_IRUSR | ::libc::S_IWUSR);
+                            ::libc::dup2(fd, 1);
+                            ::libc::dup2(fd, 2);
+                            ::libc::close(fd);
+                        }
+                        info!("Output redirected...");
+                        info!("Disabled trace checking...");
+                        watchdog.disable_trace_checking();
+                    }
+                    if program_counter.len() == 0 {
+                        info!("pc=0x{:x}", pc);
+                        program_counter.push_back(pc + 4);
+                    }
+                }
+                _ => {
+                    if program_counter.len() == 0 {
+                        program_counter.push_back(pc + 4);
                     }
                 }
             }
@@ -185,76 +227,29 @@ impl EmulatorContext {
     }
 
     pub fn run_function(&mut self, func: u32, arguments: &[u32]) {
-        let memory = &mut self.memory;
-        let system = &mut self.system;
         let mut register_file = RegisterFile::new(
             self.registers
                 .read_register(::cpu::registers::STACK_POINTER) - 16
                 - arguments.len() as u32,
-        ); //just for sure
-        let watchdog = &mut self.watchdog;
+        ); //shifted the stack pointer a bit more just to be sure
 
         // initialize stack
-        let sp = register_file.read_register(::cpu::registers::STACK_POINTER);
-        for (i, a) in arguments.iter().enumerate() {
-            let i = i as u32;
-            memory.write_word(sp + i * 4, *a);
-            if i < 4 {
-                register_file.write_register(::cpu::registers::A0 + i, *a);
+        {
+            let memory = &mut self.memory;
+            let sp = register_file.read_register(::cpu::registers::STACK_POINTER);
+            for (i, a) in arguments.iter().enumerate() {
+                let i = i as u32;
+                memory.write_word(sp + i * 4, *a);
+                if i < 4 {
+                    register_file.write_register(::cpu::registers::A0 + i, *a);
+                }
             }
         }
 
         // initialize flow control
         let mut program_counter: VecDeque<u32> = VecDeque::with_capacity(3);
         program_counter.push_back(func);
-        register_file.write_register(::cpu::registers::RETURN_ADDRESS, 4);
 
-        // work loop
-        loop {
-            let pc = program_counter.pop_front().unwrap();
-            // return from function
-            if pc == 4 {
-                return;
-            }
-            register_file.set_pc(pc);
-
-            watchdog.run_cpu_watchdogs(&mut register_file, memory, false);
-
-            let instruction = memory.fetch_instruction(pc);
-            let instruction_result =
-                eval_instruction(instruction, &mut register_file, memory, system);
-
-            // instruction result handling
-            match instruction_result {
-                CPUEvent::Nothing => {
-                    if program_counter.len() == 0 {
-                        program_counter.push_back(pc + 4);
-                    }
-                }
-                CPUEvent::Exit => break,
-                CPUEvent::AtomicLoadModifyWriteBegan => {
-                    watchdog.atomic_read_modify_write_began();
-
-                    if program_counter.len() == 0 {
-                        program_counter.push_back(pc + 4);
-                    }
-                }
-                CPUEvent::FlowChangeImmediate(npc) => {
-                    if program_counter.len() == 0 {
-                        program_counter.push_back(npc);
-                    } else {
-                        panic!("Flow control failed. Multiple jumps at once.");
-                    }
-                }
-                CPUEvent::FlowChangeDelayed(npc) => {
-                    if program_counter.len() == 0 {
-                        program_counter.push_back(pc + 4);
-                        program_counter.push_back(npc);
-                    } else {
-                        panic!("Flow control failed. Multiple jumps at once.");
-                    }
-                }
-            }
-        }
+        self.cpu_loop(program_counter, Some(&mut register_file))
     }
 }

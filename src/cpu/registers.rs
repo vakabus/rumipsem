@@ -1,6 +1,7 @@
 use cpu::watchdog::Watchdog;
 
 pub const V0: u32 = 2;
+pub const V1: u32 = 3;
 pub const A0: u32 = 4;
 pub const A3: u32 = 7;
 pub const STACK_POINTER: u32 = 29;

@@ -52,7 +52,7 @@ pub fn run_coredump(path: String, entry_point: u32, stack_pointer: u32, flags: C
 
     // run
     info!("Starting CPU loop:");
-    cpu::control::EmulatorContext::main_loop(memory, stack_pointer, entry_point, flags);
+    cpu::control::EmulatorContext::start(memory, stack_pointer, entry_point, flags);
 
     info!("Program terminated gracefully");
 }
@@ -72,7 +72,7 @@ pub fn run_binary(path: String, arguments: Vec<String>, flags: CPUFlags) {
 
     // run
     info!("Starting CPU loop:");
-    cpu::control::EmulatorContext::main_loop(memory, stack_pointer, entry_point, flags);
+    cpu::control::EmulatorContext::start(memory, stack_pointer, entry_point, flags);
 
     info!("Program terminated gracefully");
 }

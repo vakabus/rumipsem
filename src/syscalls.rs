@@ -134,14 +134,14 @@ fn translate_iovec_libc(iovec_addr: u32, iovcnt: u32, memory: &mut Memory) -> Ve
     iovec
 }
 
-const SA_NOCLDSTOP: u32 =   1;
-const SA_NOCLDWAIT: u32 =   0x10000;
-const SA_SIGINFO: u32 =     8;
-const SA_ONSTACK: u32 =     0x08000000;
-const SA_RESTART: u32 =     0x10000000;
-const SA_NODEFER: u32 =     0x40000000;
-const SA_RESETHAND: u32 =   0x80000000;
-const SA_RESTORER: u32 =    0x04000000;
+const SA_NOCLDSTOP: u32 = 1;
+const SA_NOCLDWAIT: u32 = 0x10000;
+const SA_SIGINFO: u32 = 8;
+const SA_ONSTACK: u32 = 0x08000000;
+const SA_RESTART: u32 = 0x10000000;
+const SA_NODEFER: u32 = 0x40000000;
+const SA_RESETHAND: u32 = 0x80000000;
+const SA_RESTORER: u32 = 0x04000000;
 fn translate_signal_flags(mask: u32) -> i32 {
     let mut res = 0i32;
     if mask & SA_ONSTACK == SA_ONSTACK {
@@ -249,7 +249,12 @@ impl System {
                     Ok(0)
                 }
                 SyscallO32::NRRt_sigprocmask => {
-                    let how = arg1;
+                    let how = match arg1 {
+                        1	/* SIG_BLOCK */ => ::libc::SIG_BLOCK,
+                        2	/* SIG_UNBLOCK */ => ::libc::SIG_UNBLOCK,
+                        3	/* SIG_SETMASK */ => ::libc::SIG_SETMASK,
+                        _ => panic!("sigprocmask unsupported how field")
+                    };
                     itrace!("RT_SIGPROCMASK how={}", how);
 
                     // sigset is 128bits wide = 16 bytes (kernel)
@@ -260,7 +265,6 @@ impl System {
                             sigset[i as usize] = memory.read_word(arg2 + i * 4);
                         }
                     }
-
 
                     let mut oldsigset = [0u32; 32];
                     if arg3 != 0 {
@@ -319,13 +323,14 @@ impl System {
                     let result = self.reannounce_signal_handlers(signum);
 
                     // create old sigaction. First option is old stored, then modified result from system, then 0array as a fallback
-                    let oldsigaction: [u32; SIGACTION_SIZE] = if let Some(oldsigaction) = oldsigaction {
-                        oldsigaction.into()
-                    } else if let Ok(oldsigaction) = result {
-                        MipsSigaction::from(oldsigaction).into()
-                    } else {
-                        [0u32; SIGACTION_SIZE]
-                    };
+                    let oldsigaction: [u32; SIGACTION_SIZE] =
+                        if let Some(oldsigaction) = oldsigaction {
+                            oldsigaction.into()
+                        } else if let Ok(oldsigaction) = result {
+                            MipsSigaction::from(oldsigaction).into()
+                        } else {
+                            [0u32; SIGACTION_SIZE]
+                        };
 
                     // write it back into memory
                     if arg3 != 0 {
@@ -380,12 +385,13 @@ impl System {
                     itrace!("GETPID");
 
                     check_error(unsafe { ::libc::getpid() })
+                    //Ok(0x4b)
                 }
                 SyscallO32::NRGetppid => {
                     itrace!("GETPPID");
 
-                    //check_error(unsafe { ::libc::getppid() })
-                    Ok(0x47)
+                    check_error(unsafe { ::libc::getppid() })
+                    //Ok(0x4b)
                 }
                 SyscallO32::NRUname => {
                     itrace!("UNAME addr=0x{:x}", arg1);
@@ -487,7 +493,11 @@ impl System {
                 SyscallO32::NRFork => {
                     itrace!("FORK");
 
-                    check_error(unsafe { ::libc::fork() })
+                    let res = check_error(unsafe { ::libc::fork() });
+                    if let Ok(res) = res.as_ref() {
+                        exit = CPUEvent::Fork(*res);
+                    }
+                    res
                 }
                 SyscallO32::NRExecve => {
                     let filename =
@@ -506,8 +516,14 @@ impl System {
                     let argv = f(arg2, memory);
                     let envp = f(arg3, memory);
 
-                    let argv_str: Vec<&CStr> = argv.iter().take_while(|a| *a != &(0 as *const i8)).map(|a| unsafe {CStr::from_ptr(*a)}).collect();
-                    let envp_str: Vec<&CStr> = envp.iter().take_while(|a| *a != &(0 as *const i8)).map(|a| unsafe {CStr::from_ptr(*a)}).collect();
+                    let argv_str: Vec<&CStr> = argv.iter()
+                        .take_while(|a| *a != &(0 as *const i8))
+                        .map(|a| unsafe { CStr::from_ptr(*a) })
+                        .collect();
+                    let envp_str: Vec<&CStr> = envp.iter()
+                        .take_while(|a| *a != &(0 as *const i8))
+                        .map(|a| unsafe { CStr::from_ptr(*a) })
+                        .collect();
 
                     itrace!(
                         "EXECVE filename={:?} argv={:?} envp={:?}",
@@ -585,6 +601,7 @@ impl System {
                     itrace!("DUP2 oldfd={} newfd={}", arg1, arg2);
 
                     check_error(unsafe { ::libc::dup2(arg1 as i32, arg2 as i32) })
+                    //Ok(0)
                 }
                 SyscallO32::NROpen => {
                     let mut flags = arg2 as i32;
@@ -798,6 +815,19 @@ impl System {
                         panic!("MMAP2 syscall is not implemented!");
                     }
                 }
+                SyscallO32::NRPipe => {
+                    // this syscall ignores the ABI and returns values in registers V0 and V1. Don't ask why! No idea!
+                    let pipe = ::nix::unistd::pipe();
+                    if let Ok((p1, p2)) = pipe {
+                        itrace!("PIPE pi={} po={}", p1, p2);
+                        registers.write_register(::cpu::registers::V0, p1 as u32);
+                        registers.write_register(::cpu::registers::V1, p2 as u32);
+                        Ok(0)
+                    } else {
+                        itrace!("PIPE");
+                        check_error(-1)
+                    }
+                }
                 _ => {
                     error!(
                         "sysnum={} arg1={} arg2={} arg3={} arg4={}\n",
@@ -865,9 +895,9 @@ impl System {
     }
 }
 
-const SIG_ERR: u32 = -1i32 as u32;  /* Error return.  */
-const SIG_DFL: u32 =  0i32 as u32;  /* Default action.  */
-const SIG_IGN: u32 =  1i32 as u32;  /* Ignore signal.  */
+const SIG_ERR: u32 = -1i32 as u32; /* Error return.  */
+const SIG_DFL: u32 = 0i32 as u32; /* Default action.  */
+const SIG_IGN: u32 = 1i32 as u32; /* Ignore signal.  */
 
 extern "C" fn signal_handler(
     signal: ::libc::c_int,
@@ -877,7 +907,11 @@ extern "C" fn signal_handler(
     info!("Caught signal {}", signal);
     let signal = signal as u32;
     let context = unsafe { ::cpu::control::EmulatorContext::get_mut_ref() };
-    let sigaction = context.get_system().sigactions.get(&signal).map(|a| a.clone());
+    let sigaction = context
+        .get_system()
+        .sigactions
+        .get(&signal)
+        .map(|a| a.clone());
     if let Some(sigaction) = sigaction {
         let flags = sigaction.sa_flags;
 
@@ -901,7 +935,4 @@ extern "C" fn signal_handler(
     } else {
         warn!("No signal handler is specified!");
     }
-
-
-
 }

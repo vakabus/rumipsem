@@ -36,6 +36,10 @@ impl Watchdog {
         }
     }
 
+    pub fn get_instruction_number(&self) -> usize {
+        self.instruction_number
+    }
+
     pub fn check_read(&self, reg: u32, val: u32) {
         if !self.cpu_flags.trace_checked_register_reads || self.trace_gap {
             return;
@@ -86,7 +90,16 @@ impl Watchdog {
         }
     }
 
-    pub fn run_cpu_watchdogs(&mut self, register_file: &mut RegisterFile, memory: &Memory, check_trace: bool) {
+    pub fn disable_trace_checking(&mut self) {
+        let _ = self.real_trace.take();
+    }
+
+    pub fn run_cpu_watchdogs(
+        &mut self,
+        register_file: &mut RegisterFile,
+        memory: &Memory,
+        check_trace: bool,
+    ) {
         // null pointer
         if register_file.get_pc() == 0 {
             panic!("Jumped to address 0 - probably wrong behaviour!");
@@ -152,9 +165,9 @@ impl Watchdog {
         }
     }
 
-    pub fn atomic_read_modify_write_began(&mut self) {
+    pub fn trace_gap_ahead(&mut self) {
         if self.real_trace.is_some() {
-            warn!("Trace checking temporarily disabled - atomic read-modify-write block. This is here to bypass GDB limitations...");
+            warn!("Trace checking temporarily disabled - atomic read-modify-write block or fork. This is here to bypass GDB limitations...");
             self.trace_gap = true;
         }
     }
