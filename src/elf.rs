@@ -22,9 +22,15 @@ pub fn load_elf(path: &str) -> error::Result<(Memory, u32)> {
 
         for ph in elf.program_headers.into_iter() {
             debug!("\t{:?}", ph);
-            debug!("\t   -> Need to copy from ELF file {} bytes from offset {} to address {}", ph.p_filesz, ph.p_offset, ph.p_vaddr);
+            debug!(
+                "\t   -> Need to copy from ELF file {} bytes from offset {} to address {}",
+                ph.p_filesz,
+                ph.p_offset,
+                ph.p_vaddr
+            );
 
-            let data = &buffer.as_slice()[ph.p_offset as usize..(ph.p_offset + ph.p_filesz) as usize];
+            let data = &buffer.as_slice()[ph.p_offset as usize..
+                                              (ph.p_offset + ph.p_filesz) as usize];
             memory.write_block_and_update_program_break(ph.p_vaddr as u32, data);
         }
         debug!("\tEntry point is at {:?}", elf.header.e_entry);

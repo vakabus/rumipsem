@@ -224,7 +224,11 @@ impl System {
         if translated_syscall_number == SyscallO32::NRUnknown {
             error!(
                 "sysnum={} arg1={} arg2={} arg3={} arg4={}\n",
-                syscall_number, arg1, arg2, arg3, arg4
+                syscall_number,
+                arg1,
+                arg2,
+                arg3,
+                arg4
             );
             error!("Failed to translate syscall.");
             panic!("Unknown SYSCALL");
@@ -317,8 +321,10 @@ impl System {
                     }
 
                     // save it for futuru use and obtain previous value
-                    let mut oldsigaction = self.sigactions
-                        .insert(signum, MipsSigaction::from(sigaction));
+                    let mut oldsigaction = self.sigactions.insert(
+                        signum,
+                        MipsSigaction::from(sigaction),
+                    );
 
                     let result = self.reannounce_signal_handlers(signum);
 
@@ -339,11 +345,7 @@ impl System {
                         }
                     }
 
-                    if let Err(e) = result {
-                        Err(e)
-                    } else {
-                        Ok(0)
-                    }
+                    if let Err(e) = result { Err(e) } else { Ok(0) }
                 }
                 SyscallO32::NRGetuid => {
                     if self.config.sys_fake_root {
@@ -469,7 +471,8 @@ impl System {
                         check_error(-1)
                     }
                 }
-                SyscallO32::NRFstat64 | SyscallO32::NRFstat => {
+                SyscallO32::NRFstat64 |
+                SyscallO32::NRFstat => {
                     itrace!("FSTAT64 fd={} struct_at=0x{:08x}", arg1, arg2,);
                     let res = ::nix::sys::stat::fstat(arg1 as ::libc::c_int);
                     if let Ok(stat) = res {
@@ -547,7 +550,9 @@ impl System {
                         warn!("IOCTL forced to fail! Returning EINVAL.");
                         Err(Error::from_raw_os_error(::libc::EINVAL))
                     } else {
-                        warn!("Syscall IOCTL might not work as expected due to struct translation missing and probably impossible.");
+                        warn!(
+                            "Syscall IOCTL might not work as expected due to struct translation missing and probably impossible."
+                        );
                         check_error(unsafe {
                             ::libc::ioctl(arg1 as i32, arg2 as u64, memory.translate_address(arg3))
                         })
@@ -615,11 +620,7 @@ impl System {
                     let (file, res) = unsafe {
                         (
                             CStr::from_ptr(memory.translate_address_mut(arg1) as *mut i8),
-                            ::libc::open(
-                                memory.translate_address_mut(arg1) as *mut i8,
-                                flags,
-                                arg3,
-                            ),
+                            ::libc::open(memory.translate_address_mut(arg1) as *mut i8, flags, arg3),
                         )
                     };
                     itrace!(
@@ -689,8 +690,8 @@ impl System {
                                 } else {
                                     data_read
                                 };
-                                let slice =
-                                    &buffer.as_slice()[already_written..already_written + l];
+                                let slice = &buffer.as_slice()[already_written..
+                                                                   already_written + l];
                                 memory.write_block(iov.iov_base, slice);
                                 data_read -= l;
 
@@ -831,11 +832,16 @@ impl System {
                 _ => {
                     error!(
                         "sysnum={} arg1={} arg2={} arg3={} arg4={}\n",
-                        syscall_number, arg1, arg2, arg3, arg4
+                        syscall_number,
+                        arg1,
+                        arg2,
+                        arg3,
+                        arg4
                     );
                     panic!(
                         "Syscall translated, but unknown. OrigNum={} TrNum={:?}",
-                        syscall_number, translated_syscall_number
+                        syscall_number,
+                        translated_syscall_number
                     )
                 }
             };
@@ -907,11 +913,9 @@ extern "C" fn signal_handler(
     info!("Caught signal {}", signal);
     let signal = signal as u32;
     let context = unsafe { ::cpu::control::EmulatorContext::get_mut_ref() };
-    let sigaction = context
-        .get_system()
-        .sigactions
-        .get(&signal)
-        .map(|a| a.clone());
+    let sigaction = context.get_system().sigactions.get(&signal).map(
+        |a| a.clone(),
+    );
     if let Some(sigaction) = sigaction {
         let flags = sigaction.sa_flags;
 

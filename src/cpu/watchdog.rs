@@ -73,12 +73,17 @@ impl Watchdog {
         }
 
         if let Some(trace) = self.real_trace.as_ref() {
-            let res = trace
-                .get(self.instruction_number)
-                .and_then(|x| x.registers.get(&reg));
+            let res = trace.get(self.instruction_number).and_then(
+                |x| x.registers.get(&reg),
+            );
             if let Some(res) = res {
                 if *res != val {
-                    warn!("Value 0x{:x} was written into register {}. Should have been 0x{:x}. (jumps are off by one)", val, get_register_name(reg), *res);
+                    warn!(
+                        "Value 0x{:x} was written into register {}. Should have been 0x{:x}. (jumps are off by one)",
+                        val,
+                        get_register_name(reg),
+                        *res
+                    );
                     /*if let Some(n) = trace.get(self.instruction_number+1).and_then(|x| x.registers.get(&reg)) {
                         warn!("Value of the register after next instruction is 0x{:x}", n);
                     }*/
@@ -120,9 +125,9 @@ impl Watchdog {
             return;
         }
         if let Some(trace) = self.real_trace.as_ref() {
-            let instruction_record = trace
-                .get(self.instruction_number)
-                .expect("Trace not long enough");
+            let instruction_record = trace.get(self.instruction_number).expect(
+                "Trace not long enough",
+            );
 
             if register_file.get_pc() == instruction_record.address {
                 if self.trace_gap {
@@ -132,7 +137,11 @@ impl Watchdog {
                 self.instruction_number += 1;
             } else {
                 if !self.trace_gap {
-                    panic!("Execution diverged from real execution trace - upcoming instruction is at address 0x{:x}, but 0x{:x} was expected. One of the executed instructions must be implemented differently.", register_file.get_pc(), instruction_record.address);
+                    panic!(
+                        "Execution diverged from real execution trace - upcoming instruction is at address 0x{:x}, but 0x{:x} was expected. One of the executed instructions must be implemented differently.",
+                        register_file.get_pc(),
+                        instruction_record.address
+                    );
                 }
             }
 
@@ -156,7 +165,10 @@ impl Watchdog {
                         }
                     } else {
                         if register_file.read_register(*reg) != *val {
-                            warn!("Initial register values in trace are different. Overwriting register {}!!!", get_register_name(*reg));
+                            warn!(
+                                "Initial register values in trace are different. Overwriting register {}!!!",
+                                get_register_name(*reg)
+                            );
                             register_file.write_register(*reg, *val);
                         }
                     }
@@ -167,7 +179,9 @@ impl Watchdog {
 
     pub fn trace_gap_ahead(&mut self) {
         if self.real_trace.is_some() {
-            warn!("Trace checking temporarily disabled - atomic read-modify-write block or fork. This is here to bypass GDB limitations...");
+            warn!(
+                "Trace checking temporarily disabled - atomic read-modify-write block or fork. This is here to bypass GDB limitations..."
+            );
             self.trace_gap = true;
         }
     }

@@ -19,7 +19,14 @@ pub struct RegisterFile<'a> {
 
 impl<'a> RegisterFile<'a> {
     pub fn new(stack_pointer: u32) -> RegisterFile<'a> {
-        let mut r = RegisterFile { gpr: [0u32; 31], fpr: [0f32; 32], pc: 0u32, hi: 0u32, lo: 0u32, watchdog: None};
+        let mut r = RegisterFile {
+            gpr: [0u32; 31],
+            fpr: [0f32; 32],
+            pc: 0u32,
+            hi: 0u32,
+            lo: 0u32,
+            watchdog: None,
+        };
         r.write_register(29, stack_pointer);
         r
     }

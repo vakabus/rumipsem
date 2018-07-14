@@ -77,31 +77,33 @@ pub fn eval_instruction(
                     registers.write_register(rd, r);
                 }
                 // rotation right / shift right logical
-                0b000010 => match rs {
-                    1 => {
-                        itrace!(
-                            "rotr\t{},{},{}",
-                            get_register_name(rd),
-                            get_register_name(rt),
-                            get_shift(instruction)
-                        );
-                        let r = registers
-                            .read_register(rt)
-                            .rotate_right(get_shift(instruction));
-                        registers.write_register(rd, r);
+                0b000010 => {
+                    match rs {
+                        1 => {
+                            itrace!(
+                                "rotr\t{},{},{}",
+                                get_register_name(rd),
+                                get_register_name(rt),
+                                get_shift(instruction)
+                            );
+                            let r = registers.read_register(rt).rotate_right(
+                                get_shift(instruction),
+                            );
+                            registers.write_register(rd, r);
+                        }
+                        0 => {
+                            itrace!(
+                                "srl\t{},{},{}",
+                                get_register_name(rd),
+                                get_register_name(rt),
+                                get_shift(instruction)
+                            );
+                            let r = registers.read_register(rt) >> get_shift(instruction);
+                            registers.write_register(rd, r);
+                        }
+                        _ => panic!("unknown right bitshift variant"),
                     }
-                    0 => {
-                        itrace!(
-                            "srl\t{},{},{}",
-                            get_register_name(rd),
-                            get_register_name(rt),
-                            get_shift(instruction)
-                        );
-                        let r = registers.read_register(rt) >> get_shift(instruction);
-                        registers.write_register(rd, r);
-                    }
-                    _ => panic!("unknown right bitshift variant"),
-                },
+                }
                 // ADD
                 0b100000 => {
                     itrace!(
@@ -110,9 +112,9 @@ pub fn eval_instruction(
                         get_register_name(rs),
                         get_register_name(rt)
                     );
-                    let (r, overflow) = registers
-                        .read_register(rs)
-                        .overflowing_add(registers.read_register(rt));
+                    let (r, overflow) = registers.read_register(rs).overflowing_add(
+                        registers.read_register(rt),
+                    );
                     if overflow {
                         panic!("Overflow occured during addition. Should TRAP. Please FIX");
                     }
@@ -126,16 +128,16 @@ pub fn eval_instruction(
                         get_register_name(rs),
                         get_register_name(rt)
                     );
-                    let (r, _) = registers
-                        .read_register(rs)
-                        .overflowing_add(registers.read_register(rt));
+                    let (r, _) = registers.read_register(rs).overflowing_add(
+                        registers.read_register(rt),
+                    );
                     registers.write_register(rd, r);
                 }
                 // SUBU
                 0b100011 => {
-                    let (r, _) = registers
-                        .read_register(rs)
-                        .overflowing_sub(registers.read_register(rt));
+                    let (r, _) = registers.read_register(rs).overflowing_sub(
+                        registers.read_register(rt),
+                    );
                     itrace!(
                         "subu\t{},{},{}",
                         get_register_name(rd),
@@ -190,8 +192,9 @@ pub fn eval_instruction(
                         get_register_name(rt),
                         get_register_name(rs)
                     );
-                    let r = ((registers.read_register(rt) as i32)
-                        >> (registers.read_register(rs) & 0x1F)) as u32;
+                    let r = ((registers.read_register(rt) as i32) >>
+                                 (registers.read_register(rs) & 0x1F)) as
+                        u32;
                     registers.write_register(rd, r);
                 }
                 // AND
@@ -244,8 +247,8 @@ pub fn eval_instruction(
                         get_register_name(rs),
                         get_register_name(rt)
                     );
-                    let r =
-                        (registers.read_register(rs) as i32) < (registers.read_register(rt) as i32);
+                    let r = (registers.read_register(rs) as i32) <
+                        (registers.read_register(rt) as i32);
                     registers.write_register(rd, r as u32);
                 }
                 // SLTU
@@ -349,10 +352,10 @@ pub fn eval_instruction(
                             assert_eq!(rd, 0);
                             // warn!("Deprecated DIV instruction. Removed in release 6 of MIPS32");
                             itrace!("divu\t{},{}", get_register_name(rs), get_register_name(rt));
-                            let l = (registers.read_register(rs) as i32)
-                                / (registers.read_register(rt) as i32);
-                            let h = (registers.read_register(rs) as i32)
-                                % (registers.read_register(rt) as i32);
+                            let l = (registers.read_register(rs) as i32) /
+                                (registers.read_register(rt) as i32);
+                            let h = (registers.read_register(rs) as i32) %
+                                (registers.read_register(rt) as i32);
                             registers.write_lo(l as u32);
                             registers.write_hi(h as u32);
                         }
@@ -384,7 +387,8 @@ pub fn eval_instruction(
                 // TEQ
                 0b110100 => {
                     itrace!("teq\t{},{}", get_register_name(rs), get_register_name(rt));
-                    if (registers.read_register(rs) as i32) == (registers.read_register(rt) as i32)
+                    if (registers.read_register(rs) as i32) ==
+                        (registers.read_register(rt) as i32)
                     {
                         error!("TEQ instruction assert did not pass. Trap!");
                         panic!("Error");
@@ -665,7 +669,13 @@ pub fn eval_instruction(
             let r = memory.read_word(addr);
             let vaddr = (addr % 4) * 8;
             let mask = (0xFF_FF_FF_FF >> vaddr) << vaddr;
-            itrace!("lwl\t{},0x{:x} - data=0x{:08x}, mask=0x{:x} (the data will be overlayed by previous register content)", get_register_name(rt), addr, r, mask);
+            itrace!(
+                "lwl\t{},0x{:x} - data=0x{:08x}, mask=0x{:x} (the data will be overlayed by previous register content)",
+                get_register_name(rt),
+                addr,
+                r,
+                mask
+            );
             let pv = registers.read_register(rt);
             registers.write_register(rt, (pv & !mask) | (r & mask));
         }
@@ -677,7 +687,13 @@ pub fn eval_instruction(
             let r = memory.read_word(addr);
             let vaddr = ((4 - (addr % 4)) % 4) * 8;
             let mask = (0xFF_FF_FF_FF << vaddr) >> vaddr;
-            itrace!("lwr\t{},0x{:x} - data=0x{:08x}, mask=0x{:x} (the data will be overlayed by previous register content)", get_register_name(rt), addr, r, mask);
+            itrace!(
+                "lwr\t{},0x{:x} - data=0x{:08x}, mask=0x{:x} (the data will be overlayed by previous register content)",
+                get_register_name(rt),
+                addr,
+                r,
+                mask
+            );
             let pv = registers.read_register(rt);
             registers.write_register(rt, (pv & !mask) | (r & mask));
         }
@@ -685,7 +701,12 @@ pub fn eval_instruction(
         InstructionOpcode::LL => {
             let addr = add_signed_offset(registers.read_register(rs), get_offset(instruction));
             let r = memory.read_word(addr);
-            itrace!("ll\t{},0x{:x} - data=0x{:08x} - synchronized nature of the instruction is ignored, this is preR6 version of the instruction", get_register_name(rt), addr, r);
+            itrace!(
+                "ll\t{},0x{:x} - data=0x{:08x} - synchronized nature of the instruction is ignored, this is preR6 version of the instruction",
+                get_register_name(rt),
+                addr,
+                r
+            );
             registers.write_register(rt, r);
             result_cpu_event = CPUEvent::AtomicLoadModifyWriteBegan;
         }
@@ -773,8 +794,8 @@ pub fn eval_instruction(
         }
         // SLTIU
         InstructionOpcode::SLTIU => {
-            let a = registers.read_register(rs)
-                < (sign_extend(get_offset(instruction) as u32, 16) as u32);
+            let a = registers.read_register(rs) <
+                (sign_extend(get_offset(instruction) as u32, 16) as u32);
             itrace!(
                 "sltiu\t{},{},0x{:x} - {:08x} < {:08x} = {}",
                 get_register_name(rt),
@@ -796,10 +817,10 @@ pub fn eval_instruction(
             match rt {
                 0b11111 => {
                     print!("ALUIPC");
-                    let r = 0xFF_FF_00_00
-                        & (((registers.get_pc() as i32)
-                            + (((get_offset(instruction) as u32) << 16) as i32))
-                            as u32);
+                    let r = 0xFF_FF_00_00 &
+                        (((registers.get_pc() as i32) +
+                              (((get_offset(instruction) as u32) << 16) as i32)) as
+                             u32);
                     registers.write_register(rs, r);
                 }
                 _ => panic!("Unknown PCREL operation"),
@@ -811,8 +832,10 @@ pub fn eval_instruction(
                 // MUL
                 0b000010 => {
                     assert_eq!(get_shift(instruction), 0);
-                    let (r, _) = (registers.read_register(rs) as i32)
-                        .overflowing_mul(registers.read_register(rt) as i32);
+                    let (r, _) = (registers.read_register(rs) as i32).overflowing_mul(
+                        registers.read_register(rt) as
+                            i32,
+                    );
                     itrace!(
                         "mul\t{},{},{} - res_value={}",
                         get_register_name(rd),
@@ -837,8 +860,8 @@ pub fn eval_instruction(
                     let shift = get_shift(instruction);
                     assert_eq!(shift & 0xFC, 0b01000);
                     let bp = shift & 0x03;
-                    let r = (registers.read_register(rt) << (8 * bp))
-                        | (registers.read_register(rs) >> (32 - 8 * bp));
+                    let r = (registers.read_register(rt) << (8 * bp)) |
+                        (registers.read_register(rs) >> (32 - 8 * bp));
                     registers.write_register(rd, r);
                 }
                 0b111011 => {
@@ -847,17 +870,23 @@ pub fn eval_instruction(
                     match rd {
                         29 => {
                             // should throw an exception
-                            warn!("Attempt to read from UserLocalRegister in coprocessor. Unsupported. Faking it with some constant value.");
+                            warn!(
+                                "Attempt to read from UserLocalRegister in coprocessor. Unsupported. Faking it with some constant value."
+                            );
                             registers.write_register(rt, 0x58e950); // this value was copied from gdb on real HW
-                                                                    // UserLocal Register. This register provides read access to the coprocessor 0
-                                                                    // UserLocal register, if it is implemented.
-                                                                    // In some operating environments, the UserLocal register is a pointer to a
-                                                                    // thread-specific storage block.
+                            // UserLocal Register. This register provides read access to the coprocessor 0
+                            // UserLocal register, if it is implemented.
+                            // In some operating environments, the UserLocal register is a pointer to a
+                            // thread-specific storage block.
                         }
                         _ => {
                             println!();
 
-                            panic!("Attempt to read unknown CPU hardware register - rd={} into register rt={}", rd, rt);
+                            panic!(
+                                "Attempt to read unknown CPU hardware register - rd={} into register rt={}",
+                                rd,
+                                rt
+                            );
                         }
                     }
                 }
@@ -920,10 +949,12 @@ pub fn eval_instruction(
                 _ => panic!("Unknown COP1 funct, 0b{:06b}", funct),
             }
         }
-        _ => panic!(
-            "Tried to execute unimplemented instruction, OPCODE = {:?}",
-            opcode
-        ),
+        _ => {
+            panic!(
+                "Tried to execute unimplemented instruction, OPCODE = {:?}",
+                opcode
+            )
+        }
     };
 
     return result_cpu_event;

@@ -12,22 +12,24 @@ pub enum FloatFmt {
 
 impl FloatFmt {
     pub fn from_raw(fmt: u32, id: u32, registers: &RegisterFile) -> FloatFmt {
+        /*
         //FIXME no idea what to do with these format strings, but they appear in binaries. So this is guesswork.
         let fmt = match fmt {
             0x2 => 0x14,
             _ => fmt,
         };
+        */
 
         match fmt {
             0x10 => FloatFmt::S(registers.read_fpr(id)),
             0x11 => FloatFmt::D(
-                ((((registers.read_fpr(id + 1) as u32) as u64) << 32)
-                    | (registers.read_fpr(id) as u32) as u64) as f64,
+                ((((registers.read_fpr(id + 1) as u32) as u64) << 32) |
+                     (registers.read_fpr(id) as u32) as u64) as f64,
             ),
             0x14 => FloatFmt::W(registers.read_fpr(id)),
             0x15 => FloatFmt::L(
-                ((((registers.read_fpr(id + 1) as u32) as u64) << 32)
-                    | (registers.read_fpr(id) as u32) as u64) as f64,
+                ((((registers.read_fpr(id + 1) as u32) as u64) << 32) |
+                     (registers.read_fpr(id) as u32) as u64) as f64,
             ),
             0x16 => FloatFmt::PS(registers.read_fpr(id), registers.read_fpr(id + 1)),
             _ => panic!("Unknown float format 0x{:x}", fmt),

@@ -32,8 +32,9 @@ fn main() {
     configure_logging(args.verbosity_level);
 
     if args.is_coredump {
-        let entry_point = args.entry_point
-            .expect("Coredumps do not contain entry point. Must be specified manually.");
+        let entry_point = args.entry_point.expect(
+            "Coredumps do not contain entry point. Must be specified manually.",
+        );
         let stack_pointer = args.stack_pointer.expect(
             "Coredumps contain stack, but I don't know where. You need to specify it manually.",
         );

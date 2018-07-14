@@ -101,7 +101,7 @@ pub fn translate_opcode(opcode: u32) -> InstructionOpcode {
         0b110000 => InstructionOpcode::LL,
         0b110001 => InstructionOpcode::LWC1,
         0b110010 => InstructionOpcode::BC,
-       // 0b110010 => InstructionOpcode::LWC2,   this instruction was moved in R6 under COP2
+        // 0b110010 => InstructionOpcode::LWC2,   this instruction was moved in R6 under COP2
         0b110011 => InstructionOpcode::PREF,
         0b110101 => InstructionOpcode::LDC1,
         0b110110 => InstructionOpcode::LDC2,
@@ -111,10 +111,6 @@ pub fn translate_opcode(opcode: u32) -> InstructionOpcode {
         0b111011 => InstructionOpcode::PCREL,
         0b111101 => InstructionOpcode::SDC1,
         0b111110 => InstructionOpcode::SDC2,
-        _ => {
-            panic!("Unknown opcode {:06b}.")
-        }
+        _ => panic!("Unknown opcode {:06b}."),
     }
 }
-
-

@@ -1,5 +1,5 @@
 
-use ::simplelog::*;
+use simplelog::*;
 
 pub fn configure_logging(log_level: u32) {
     let level = match log_level {

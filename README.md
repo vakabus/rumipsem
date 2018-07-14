@@ -6,7 +6,8 @@ Rumipsem aims to execute statically compiled ELF binaries for systems with MIPS3
 
 The emulator is developed in stable release channel of Rust.
 
-To build it, run:
+To build it, run in the project root:
+
 ```bash
 cargo build --release
 ```
@@ -19,7 +20,25 @@ Result executable will be stored in `target/release/rumipsem`.
 rumipsem [OPTIONS] -- ELF_BINARY [ARGS...]
 ```
 
-The doubledash `--` is not necessary, it just prevents the emulator from consuming arguments for the actual emulated program. Most notable option is probably `-v` for verbosity. You can stack them as you like - `-vvvv` logs every single instruction emulated. For more options, run with `--help`.
+The doubledash `--` is not necessary, it just prevents the emulator from consuming arguments for the actual emulated program.
+Most notable option for the emulator is probably `-v` for verbosity. You can stack them as much as you like - `-vvvv` logs every single instruction emulated. For more options, run with `--help`.
+
+### Example
+
+You can give it a try with [BusyBox MIPS binary](https://busybox.net/downloads/binaries/1.28.1-defconfig-multiarch/). During development, I was testing on version 1.28.1. So that should be able to run some basic things. Probably the most complex of functional tools is `sh`.
+
+```
+rumipsem [-vvvv] -- busybox-mips sh
+```
+
+Just be aware, that `ioctl` syscall does not work properly, so it thinks, its running on some ancient terminal. No prompt is displayed and tab completion does not work either. But it's able to execute normal programs from your system!
+
+## Current emulator status
+
+Majority of instructions are implemented, but there are still some, that are not. Probably the most problematic missing feature is floats. Only load/stores are supported. Calculations with them are not.
+
+Bigger problem for usability are missing syscall implementations. Some syscalls are even pretty much imposible to implement properly - `ioctl` takes an arbitrary data structure (or some scalar). But the data structures must be translated to match the native system in endiannity and field sizes. That means, every device driver would have to have a special translation code just for it.
+Other problem is `mmap`. It is possible to implement it, but it requires more advanced memory management than currently implemented.
 
 ## Testing and coredumps
 

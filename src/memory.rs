@@ -97,48 +97,52 @@ impl Memory {
         let addr = eff_address - vaddr;
         // Spagetti code, but understandable
         match self.endianness {
-            Endianness::BigEndian => match vaddr {
-                0 => {
-                    self.write_byte(addr + 3, value >> 0);
-                    self.write_byte(addr + 2, value >> 8);
-                    self.write_byte(addr + 1, value >> 16);
-                    self.write_byte(addr + 0, value >> 24);
+            Endianness::BigEndian => {
+                match vaddr {
+                    0 => {
+                        self.write_byte(addr + 3, value >> 0);
+                        self.write_byte(addr + 2, value >> 8);
+                        self.write_byte(addr + 1, value >> 16);
+                        self.write_byte(addr + 0, value >> 24);
+                    }
+                    1 => {
+                        self.write_byte(addr + 3, value >> 8);
+                        self.write_byte(addr + 2, value >> 16);
+                        self.write_byte(addr + 1, value >> 24);
+                    }
+                    2 => {
+                        self.write_byte(addr + 3, value >> 16);
+                        self.write_byte(addr + 2, value >> 24);
+                    }
+                    3 => {
+                        self.write_byte(addr + 3, value >> 24);
+                    }
+                    _ => unreachable!(),
                 }
-                1 => {
-                    self.write_byte(addr + 3, value >> 8);
-                    self.write_byte(addr + 2, value >> 16);
-                    self.write_byte(addr + 1, value >> 24);
+            }
+            Endianness::LittleEndian => {
+                match vaddr {
+                    0 => {
+                        self.write_byte(addr + 3, value >> 24);
+                    }
+                    1 => {
+                        self.write_byte(addr + 3, value >> 16);
+                        self.write_byte(addr + 2, value >> 24);
+                    }
+                    2 => {
+                        self.write_byte(addr + 3, value >> 8);
+                        self.write_byte(addr + 2, value >> 16);
+                        self.write_byte(addr + 1, value >> 24);
+                    }
+                    3 => {
+                        self.write_byte(addr + 3, value >> 0);
+                        self.write_byte(addr + 2, value >> 8);
+                        self.write_byte(addr + 1, value >> 16);
+                        self.write_byte(addr + 0, value >> 24);
+                    }
+                    _ => unreachable!(),
                 }
-                2 => {
-                    self.write_byte(addr + 3, value >> 16);
-                    self.write_byte(addr + 2, value >> 24);
-                }
-                3 => {
-                    self.write_byte(addr + 3, value >> 24);
-                }
-                _ => unreachable!(),
-            },
-            Endianness::LittleEndian => match vaddr {
-                0 => {
-                    self.write_byte(addr + 3, value >> 24);
-                }
-                1 => {
-                    self.write_byte(addr + 3, value >> 16);
-                    self.write_byte(addr + 2, value >> 24);
-                }
-                2 => {
-                    self.write_byte(addr + 3, value >> 8);
-                    self.write_byte(addr + 2, value >> 16);
-                    self.write_byte(addr + 1, value >> 24);
-                }
-                3 => {
-                    self.write_byte(addr + 3, value >> 0);
-                    self.write_byte(addr + 2, value >> 8);
-                    self.write_byte(addr + 1, value >> 16);
-                    self.write_byte(addr + 0, value >> 24);
-                }
-                _ => unreachable!(),
-            },
+            }
         }
     }
 
@@ -148,48 +152,52 @@ impl Memory {
         let address = eff_address - vaddr;
         // spagetti again, yay
         match self.endianness {
-            Endianness::BigEndian => match vaddr {
-                0 => {
-                    self.write_byte(address + 0, value >> 0);
+            Endianness::BigEndian => {
+                match vaddr {
+                    0 => {
+                        self.write_byte(address + 0, value >> 0);
+                    }
+                    1 => {
+                        self.write_byte(address + 0, value >> 8);
+                        self.write_byte(address + 1, value >> 0);
+                    }
+                    2 => {
+                        self.write_byte(address + 0, value >> 16);
+                        self.write_byte(address + 1, value >> 8);
+                        self.write_byte(address + 2, value >> 0);
+                    }
+                    3 => {
+                        self.write_byte(address + 0, value >> 24);
+                        self.write_byte(address + 1, value >> 16);
+                        self.write_byte(address + 2, value >> 8);
+                        self.write_byte(address + 3, value >> 0);
+                    }
+                    _ => unreachable!(),
                 }
-                1 => {
-                    self.write_byte(address + 0, value >> 8);
-                    self.write_byte(address + 1, value >> 0);
+            }
+            Endianness::LittleEndian => {
+                match vaddr {
+                    0 => {
+                        self.write_byte(address + 0, value >> 24);
+                        self.write_byte(address + 1, value >> 16);
+                        self.write_byte(address + 2, value >> 8);
+                        self.write_byte(address + 3, value >> 0);
+                    }
+                    1 => {
+                        self.write_byte(address + 0, value >> 16);
+                        self.write_byte(address + 1, value >> 8);
+                        self.write_byte(address + 2, value >> 0);
+                    }
+                    2 => {
+                        self.write_byte(address + 0, value >> 8);
+                        self.write_byte(address + 1, value >> 0);
+                    }
+                    3 => {
+                        self.write_byte(address + 0, value >> 0);
+                    }
+                    _ => unreachable!(),
                 }
-                2 => {
-                    self.write_byte(address + 0, value >> 16);
-                    self.write_byte(address + 1, value >> 8);
-                    self.write_byte(address + 2, value >> 0);
-                }
-                3 => {
-                    self.write_byte(address + 0, value >> 24);
-                    self.write_byte(address + 1, value >> 16);
-                    self.write_byte(address + 2, value >> 8);
-                    self.write_byte(address + 3, value >> 0);
-                }
-                _ => unreachable!(),
-            },
-            Endianness::LittleEndian => match vaddr {
-                0 => {
-                    self.write_byte(address + 0, value >> 24);
-                    self.write_byte(address + 1, value >> 16);
-                    self.write_byte(address + 2, value >> 8);
-                    self.write_byte(address + 3, value >> 0);
-                }
-                1 => {
-                    self.write_byte(address + 0, value >> 16);
-                    self.write_byte(address + 1, value >> 8);
-                    self.write_byte(address + 2, value >> 0);
-                }
-                2 => {
-                    self.write_byte(address + 0, value >> 8);
-                    self.write_byte(address + 1, value >> 0);
-                }
-                3 => {
-                    self.write_byte(address + 0, value >> 0);
-                }
-                _ => unreachable!(),
-            },
+            }
         }
     }
 
@@ -212,8 +220,8 @@ impl Memory {
             return;
         }
 
-        let data_slice =
-            &mut (self.data.as_mut_slice()[address as usize..(address as usize + data.len())]);
+        let data_slice = &mut (self.data.as_mut_slice()[address as usize..
+                                                            (address as usize + data.len())]);
         data_slice.copy_from_slice(data);
     }
 
@@ -250,8 +258,8 @@ impl Memory {
         assert_eq!(address % 8, 0);
         info!("Generating new stack");
         let mut pointer_address = address + 4;
-        let mut data_address = pointer_address
-            + (1 + arguments.len() as u32 + 1 + environment_variables.len() as u32 + 1 + 40) * 4;
+        let mut data_address = pointer_address +
+            (1 + arguments.len() as u32 + 1 + environment_variables.len() as u32 + 1 + 40) * 4;
 
         debug!("\tArguments: {}", arguments.len());
         self.write_word(address, arguments.len() as u32);
@@ -298,7 +306,7 @@ impl Memory {
         self.write_word(pointer_address, 0);
         pointer_address += 4;
 
-        
+
         // auxiliary vector
         debug!("\tAuxilary vector:");
         let mut auxv: Vec<u8> = Vec::new();

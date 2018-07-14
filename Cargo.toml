@@ -4,17 +4,26 @@ version = "0.1.0"
 authors = ["Vasek Sraier <git@vakabus.cz>"]
 
 [dependencies]
+# for parsing ELF files
 goblin = '*'
-#sc = { git = "https://github.com/japaric/syscall.rs" }
-libc = '*'
+
+# CLI
+argparse = '*'
 log = '*'
 simplelog = '*'
-#simple_logger = '*'
+
+# controlling flow against recorded traces
 serde = '*'
 serde_json = '*'
 serde_derive = '*'
 flate2 = '*'
-argparse = '*'
+
+# for number processing
 num-traits = '*'
-nix = '*'
 byteorder = '*'
+
+# libc stub and rust overlay for implementing syscalls
+libc = '*'
+nix = '*'
+#sc = { git = "https://github.com/japaric/syscall.rs" }
+

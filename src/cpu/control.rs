@@ -44,7 +44,7 @@ impl CPUFlags {
             },
             watchdog_conf: CPUFlagsWatchdog {
                 trace_checked_register_reads: true,
-                trace_checked_register_writes: true,
+                trace_checked_register_writes: false,
                 trace_full_register_values_check: false,
                 trace_panic_on_invalid_read: false,
                 trace_panic_on_invalid_write: false,
@@ -80,10 +80,10 @@ impl EmulatorContext {
             // checker by using reference obtained from the singleton itself using unsafe block.
             // It should not cause any memory corruption, because read-only reference is used
             // and the Watchdog will not be discarded until the end of whole program...
-            state
-                .init_singleton()
-                .registers
-                .configure_watchdog(&EmulatorContext::get_ref().watchdog);
+            state.init_singleton().registers.configure_watchdog(
+                &EmulatorContext::get_ref()
+                    .watchdog,
+            );
             EmulatorContext::get_mut_ref()
         };
         state.run_program(entry_point);
@@ -94,15 +94,15 @@ impl EmulatorContext {
     }
 
     pub unsafe fn get_mut_ref() -> &'static mut EmulatorContext {
-        EMULATOR_STATE
-            .as_mut()
-            .expect("Emulator singleton not initialized!")
+        EMULATOR_STATE.as_mut().expect(
+            "Emulator singleton not initialized!",
+        )
     }
 
     pub unsafe fn get_ref() -> &'static EmulatorContext {
-        EMULATOR_STATE
-            .as_ref()
-            .expect("Emulator singleton not initialized!")
+        EMULATOR_STATE.as_ref().expect(
+            "Emulator singleton not initialized!",
+        )
     }
 
     pub fn get_system(&self) -> &System {
@@ -175,7 +175,7 @@ impl EmulatorContext {
                 CPUEvent::Fork(return_val) => {
                     if return_val == 0 {
                         info!("Parent process!")
-                        /*
+                    /*
                         info!("Redirecting parent output into /tmp/log_parent...");
 
                         unsafe {
@@ -234,9 +234,9 @@ impl EmulatorContext {
 
     pub fn run_function(&mut self, func: u32, arguments: &[u32]) {
         let mut register_file = RegisterFile::new(
-            self.registers
-                .read_register(::cpu::registers::STACK_POINTER) - 16
-                - arguments.len() as u32,
+            self.registers.read_register(
+                ::cpu::registers::STACK_POINTER,
+            ) - 16 - arguments.len() as u32,
         ); //shifted the stack pointer a bit more just to be sure
 
         // initialize stack
