@@ -80,7 +80,8 @@ impl EmulatorContext {
             // checker by using reference obtained from the singleton itself using unsafe block.
             // It should not cause any memory corruption, because read-only reference is used
             // and the Watchdog will not be discarded until the end of whole program...
-            state.init_singleton()
+            state
+                .init_singleton()
                 .registers
                 .configure_watchdog(&EmulatorContext::get_ref().watchdog);
             EmulatorContext::get_mut_ref()
@@ -104,6 +105,10 @@ impl EmulatorContext {
             .expect("Emulator singleton not initialized!")
     }
 
+    pub fn get_system(&self) -> &System {
+        &self.system
+    }
+
     pub fn run_cpu(&mut self, entry_point: u32) {
         let memory = &mut self.memory;
         let system = &mut self.system;
@@ -124,7 +129,7 @@ impl EmulatorContext {
             let pc = program_counter.pop_front().unwrap();
             register_file.set_pc(pc);
 
-            watchdog.run_cpu_watchdogs(register_file, memory);
+            watchdog.run_cpu_watchdogs(register_file, memory, true);
 
             let instruction = memory.fetch_instruction(pc);
             let instruction_result = eval_instruction(instruction, register_file, memory, system);
@@ -174,6 +179,80 @@ impl EmulatorContext {
                 if buf[0] != ('\n' as u8) {
                     print!("Continuing...");
                     debug_mode = false;
+                }
+            }
+        }
+    }
+
+    pub fn run_function(&mut self, func: u32, arguments: &[u32]) {
+        let memory = &mut self.memory;
+        let system = &mut self.system;
+        let mut register_file = RegisterFile::new(
+            self.registers
+                .read_register(::cpu::registers::STACK_POINTER) - 16
+                - arguments.len() as u32,
+        ); //just for sure
+        let watchdog = &mut self.watchdog;
+
+        // initialize stack
+        let sp = register_file.read_register(::cpu::registers::STACK_POINTER);
+        for (i, a) in arguments.iter().enumerate() {
+            let i = i as u32;
+            memory.write_word(sp + i * 4, *a);
+            if i < 4 {
+                register_file.write_register(::cpu::registers::A0 + i, *a);
+            }
+        }
+
+        // initialize flow control
+        let mut program_counter: VecDeque<u32> = VecDeque::with_capacity(3);
+        program_counter.push_back(func);
+        register_file.write_register(::cpu::registers::RETURN_ADDRESS, 4);
+
+        // work loop
+        loop {
+            let pc = program_counter.pop_front().unwrap();
+            // return from function
+            if pc == 4 {
+                return;
+            }
+            register_file.set_pc(pc);
+
+            watchdog.run_cpu_watchdogs(&mut register_file, memory, false);
+
+            let instruction = memory.fetch_instruction(pc);
+            let instruction_result =
+                eval_instruction(instruction, &mut register_file, memory, system);
+
+            // instruction result handling
+            match instruction_result {
+                CPUEvent::Nothing => {
+                    if program_counter.len() == 0 {
+                        program_counter.push_back(pc + 4);
+                    }
+                }
+                CPUEvent::Exit => break,
+                CPUEvent::AtomicLoadModifyWriteBegan => {
+                    watchdog.atomic_read_modify_write_began();
+
+                    if program_counter.len() == 0 {
+                        program_counter.push_back(pc + 4);
+                    }
+                }
+                CPUEvent::FlowChangeImmediate(npc) => {
+                    if program_counter.len() == 0 {
+                        program_counter.push_back(npc);
+                    } else {
+                        panic!("Flow control failed. Multiple jumps at once.");
+                    }
+                }
+                CPUEvent::FlowChangeDelayed(npc) => {
+                    if program_counter.len() == 0 {
+                        program_counter.push_back(pc + 4);
+                        program_counter.push_back(npc);
+                    } else {
+                        panic!("Flow control failed. Multiple jumps at once.");
+                    }
                 }
             }
         }

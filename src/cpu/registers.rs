@@ -1,8 +1,10 @@
 use cpu::watchdog::Watchdog;
 
 pub const V0: u32 = 2;
+pub const A0: u32 = 4;
 pub const A3: u32 = 7;
 pub const STACK_POINTER: u32 = 29;
+pub const RETURN_ADDRESS: u32 = 31;
 
 
 pub struct RegisterFile<'a> {

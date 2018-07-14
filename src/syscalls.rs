@@ -45,11 +45,12 @@ struct MipsStat {
     _st_padding4: [u32; 14],
 }
 
+#[derive(Clone)]
 #[repr(C)]
 struct MipsSigaction {
     __sa_handler: u32,
     sa_mask: [u32; 4],
-    sa_flags: i32,
+    sa_flags: u32,
     sa_restorer: u32,
 }
 
@@ -133,16 +134,15 @@ fn translate_iovec_libc(iovec_addr: u32, iovcnt: u32, memory: &mut Memory) -> Ve
     iovec
 }
 
-#[allow(overflowing_literals)]
-fn translate_signal_flags(mask: i32) -> i32 {
-    const SA_ONSTACK: i32 = 0x08000000;
-    const SA_RESETHAND: i32 = 0x80000000;
-    const SA_RESTART: i32 = 0x10000000;
-    const SA_SIGINFO: i32 = 0x00000008;
-    const SA_NODEFER: i32 = 0x40000000;
-    const SA_NOCLDWAIT: i32 = 0x00010000;
-    const SA_NOCLDSTOP: i32 = 0x00000001;
-
+const SA_NOCLDSTOP: u32 =   1;
+const SA_NOCLDWAIT: u32 =   0x10000;
+const SA_SIGINFO: u32 =     8;
+const SA_ONSTACK: u32 =     0x08000000;
+const SA_RESTART: u32 =     0x10000000;
+const SA_NODEFER: u32 =     0x40000000;
+const SA_RESETHAND: u32 =   0x80000000;
+const SA_RESTORER: u32 =    0x04000000;
+fn translate_signal_flags(mask: u32) -> i32 {
     let mut res = 0i32;
     if mask & SA_ONSTACK == SA_ONSTACK {
         res ^= ::libc::SA_ONSTACK;
@@ -790,7 +790,7 @@ impl System {
                     let addr = arg1;
                     let len = arg2;
 
-                    itrace!("MMAP2 addr=0x{:x} len={}", arg1, len);
+                    itrace!("MMAP2 addr=0x{:x} len={}", addr, len);
 
                     if len == 0 {
                         Err(Error::from_raw_os_error(::libc::EINVAL))
@@ -865,10 +865,43 @@ impl System {
     }
 }
 
+const SIG_ERR: u32 = -1i32 as u32;  /* Error return.  */
+const SIG_DFL: u32 =  0i32 as u32;  /* Default action.  */
+const SIG_IGN: u32 =  1i32 as u32;  /* Ignore signal.  */
+
 extern "C" fn signal_handler(
     signal: ::libc::c_int,
     _: *mut ::libc::siginfo_t,
     _: *mut ::libc::c_void,
 ) {
-    println!("ohhhhhh prisel signal {}", signal)
+    info!("Caught signal {}", signal);
+    let signal = signal as u32;
+    let context = unsafe { ::cpu::control::EmulatorContext::get_mut_ref() };
+    let sigaction = context.get_system().sigactions.get(&signal).map(|a| a.clone());
+    if let Some(sigaction) = sigaction {
+        let flags = sigaction.sa_flags;
+
+        if sigaction.__sa_handler == SIG_IGN || sigaction.__sa_handler == SIG_DFL {
+            info!("Default of ignored handler. Ignoring!");
+            return;
+        } else if sigaction.__sa_handler == SIG_ERR {
+            error!("Signal caught, that requested error behaviour!");
+            panic!("signal error requested");
+        }
+
+        if flags & SA_RESTORER == SA_RESTORER {
+            unimplemented!("sa_restorer signal handler");
+        } else if flags & SA_SIGINFO == SA_SIGINFO {
+            unimplemented!("Signal handler with siginfo");
+        } else {
+            info!("Running simple signal handler with only one argument - signal number.");
+            context.run_function(sigaction.__sa_handler, &[signal]);
+            info!("End of signal handler!");
+        }
+    } else {
+        warn!("No signal handler is specified!");
+    }
+
+
+
 }

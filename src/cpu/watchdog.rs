@@ -86,7 +86,7 @@ impl Watchdog {
         }
     }
 
-    pub fn run_cpu_watchdogs(&mut self, register_file: &mut RegisterFile, memory: &Memory) {
+    pub fn run_cpu_watchdogs(&mut self, register_file: &mut RegisterFile, memory: &Memory, check_trace: bool) {
         // null pointer
         if register_file.get_pc() == 0 {
             panic!("Jumped to address 0 - probably wrong behaviour!");
@@ -103,6 +103,9 @@ impl Watchdog {
         }
 
         // trace if enabled
+        if !check_trace {
+            return;
+        }
         if let Some(trace) = self.real_trace.as_ref() {
             let instruction_record = trace
                 .get(self.instruction_number)
